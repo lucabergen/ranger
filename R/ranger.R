@@ -998,7 +998,7 @@ ranger <- function(formula = NULL, data = NULL, num.trees = 500, mtry = NULL,
     }
   }
 
-  if (treetype == 5) {
+  if (kernel.regression || treetype == 5) {
     y.mat <- as.matrix(y)
   } else {
     y.mat <- as.matrix(as.numeric(y))
