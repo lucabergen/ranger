@@ -256,10 +256,9 @@ ranger <- function(formula = NULL, data = NULL, num.trees = 500, mtry = NULL,
                    quantreg = FALSE, time.interest = NULL, oob.error = TRUE,
                    num.threads = NULL, save.memory = FALSE,
                    verbose = TRUE, node.stats = FALSE, seed = NULL, na.action = "na.learn",
-                   dependent.variable.name = NULL, status.variable.name = NULL,
-                   classification = NULL, x = NULL, y = NULL,
-                   kernel.regression = FALSE, ...) {
-
+                   dependent.variable.name = NULL, status.variable.name = NULL, 
+                   classification = NULL, x = NULL, y = NULL, ...) {
+  
   ## Handle ... arguments
   if (length(list(...)) > 0) {
     warning(paste("Unused arguments:", paste(names(list(...)), collapse = ", ")))
@@ -374,9 +373,7 @@ ranger <- function(formula = NULL, data = NULL, num.trees = 500, mtry = NULL,
   }
   
   ## Treetype
-  if (kernel.regression) {
-    treetype <- 3
-  } else if (is.factor(y) || is.logical(y)) {
+  if (is.factor(y) || is.logical(y)) {
     if (probability) {
       treetype <- 9
     } else {
@@ -997,8 +994,8 @@ ranger <- function(formula = NULL, data = NULL, num.trees = 500, mtry = NULL,
       x <- data.matrix(x)
     }
   }
-
-  if (kernel.regression || treetype == 5) {
+  
+  if (treetype == 5) {
     y.mat <- as.matrix(y)
   } else {
     y.mat <- as.matrix(as.numeric(y))
