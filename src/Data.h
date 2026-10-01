@@ -134,9 +134,6 @@ public:
   size_t getNumRows() const {
     return num_rows;
   }
-  size_t getNumColsY() const {
-    return num_cols_y;
-  }
 
   size_t getMaxNumUniqueValues() const {
     if (snp_data == 0 || max_num_unique_values > 3) {
@@ -209,7 +206,6 @@ protected:
   size_t num_rows;
   size_t num_rows_rounded;
   size_t num_cols;
-  size_t num_cols_y = 1;
 
   unsigned char* snp_data;
   size_t num_cols_no_snp;
