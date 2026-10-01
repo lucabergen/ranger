@@ -12,7 +12,11 @@
 #include <algorithm>
 #include <iostream>
 #include <iterator>
-
+#include <cmath>
+#include <numeric>
+#include <stdexcept>
+#include <utility>
+#include <vector>
 #include <ctime>
 
 #include "utility.h"
@@ -108,30 +112,46 @@ bool TreeRegression::splitNodeInternal(size_t nodeID, std::vector<size_t>& possi
     return true;
   }
 
-  // Check if node is pure and set split_value to estimate and stop if pure
-  bool pure = true;
-  double pure_value = 0;
-  for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
-    size_t sampleID = sampleIDs[pos];
-    double value = data->get_y(sampleID, 0);
-    if (pos != start_pos[nodeID] && value != pure_value) {
-      pure = false;
-      break;
-    }
-    pure_value = value;
+  // In the current R interface, a multi-column response denotes kernel regression.
+  const bool kernel_regression = data->getNumColsY() > 1;
+
+  // Build the tree-wide output-feature approximation once, on the bootstrap root sample.
+  if (kernel_regression && output_features.sample_ids.empty()) {
+    initializeOutputFeatures();
   }
-  if (pure) {
-    if (splitrule == POISSON && pure_value == 0.) {
-      split_values[nodeID] = estimate(nodeID);
-    } else {
-      split_values[nodeID] = pure_value;
+
+  // Scalar-response purity only checks the first response column, so it is not valid
+  // for a vector-valued kernel response.
+  if (!kernel_regression) {
+    bool pure = true;
+    double pure_value = 0;
+
+    for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
+      size_t sampleID = sampleIDs[pos];
+      double value = data->get_y(sampleID, 0);
+
+      if (pos != start_pos[nodeID] && value != pure_value) {
+        pure = false;
+        break;
+      }
+      pure_value = value;
     }
-    return true;
+
+    if (pure) {
+      if (splitrule == POISSON && pure_value == 0.) {
+        split_values[nodeID] = estimate(nodeID);
+      } else {
+        split_values[nodeID] = pure_value;
+      }
+      return true;
+    }
   }
 
   // Find best split, stop if no decrease of impurity
   bool stop;
-  if (splitrule == MAXSTAT) {
+  if (kernel_regression) {
+    stop = findBestSplitKernel(nodeID, possible_split_varIDs);
+  } else if (splitrule == MAXSTAT) {
     stop = findBestSplitMaxstat(nodeID, possible_split_varIDs);
   } else if (splitrule == EXTRATREES) {
     stop = findBestSplitExtraTrees(nodeID, possible_split_varIDs);
@@ -244,6 +264,204 @@ bool TreeRegression::findBestSplit(size_t nodeID, std::vector<size_t>& possible_
   saveSplitVarID(best_varID);
 
   return false;
+}
+
+void TreeRegression::initializeOutputFeatures() {
+  const size_t n = data->getNumRows();
+  const size_t output_columns = data->getNumColsY();
+
+  std::vector<size_t> ids(sampleIDs.begin(), sampleIDs.end());
+  std::sort(ids.begin(), ids.end());
+  ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
+
+  bool is_gram = (output_columns == n);
+
+  if (is_gram) {
+    double scale = 0;
+
+    for (size_t i = 0; i < ids.size(); ++i) {
+      for (size_t j = 0; j < ids.size(); ++j) {
+        const double a = data->get_y(ids[i], ids[j]);
+        const double b = data->get_y(ids[j], ids[i]);
+
+        if (!std::isfinite(a) || !std::isfinite(b)) {
+          throw std::runtime_error(
+              "Kernel response matrix contains non-finite values.");
+        }
+        scale = std::max(scale, std::max(std::abs(a), std::abs(b)));
+      }
+    }
+
+    const double symmetry_tolerance = 1e-10 * std::max(1.0, scale);
+    for (size_t i = 0; i < ids.size() && is_gram; ++i) {
+      for (size_t j = 0; j < i; ++j) {
+        if (std::abs(data->get_y(ids[i], ids[j]) -
+            data->get_y(ids[j], ids[i])) > symmetry_tolerance) {
+          is_gram = false;
+          break;
+        }
+      }
+    }
+  }
+
+  std::vector<size_t> local_ids(ids.size());
+  std::iota(local_ids.begin(), local_ids.end(), 0);
+  const double tau = 1e-6;
+
+  if (is_gram) {
+    const size_t m = ids.size();
+    std::vector<double> K_root(m * m);
+
+    for (size_t j = 0; j < m; ++j) {
+      for (size_t i = 0; i < m; ++i) {
+        K_root[i + j * m] = data->get_y(ids[i], ids[j]);
+      }
+    }
+
+    output_features = approximateFromGram(K_root, m, local_ids, tau);
+  } else {
+    const size_t m = ids.size();
+    std::vector<double> Phi_root(m * output_columns);
+
+    for (size_t j = 0; j < output_columns; ++j) {
+      for (size_t i = 0; i < m; ++i) {
+        Phi_root[i + j * m] = data->get_y(ids[i], j);
+      }
+    }
+
+    output_features =
+      approximateFromFeatures(Phi_root, m, output_columns, local_ids, tau);
+  }
+
+  output_features.sample_ids = ids;
+}
+
+bool TreeRegression::findBestSplitKernel(
+    size_t nodeID, std::vector<size_t>& possible_split_varIDs) {
+  const size_t num_samples_node = end_pos[nodeID] - start_pos[nodeID];
+  if (num_samples_node < 2 * (*min_bucket)[0]) {
+    return true;
+  }
+
+  const size_t rank = output_features.rank;
+  std::vector<double> sum_total(rank, 0);
+
+  for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
+    const size_t row = output_features.rowForSample(sampleIDs[pos]);
+    for (size_t k = 0; k < rank; ++k) {
+      sum_total[k] += output_features(row, k);
+    }
+  }
+
+  double parent_score = 0;
+  for (size_t k = 0; k < rank; ++k) {
+    parent_score += sum_total[k] * sum_total[k] / num_samples_node;
+  }
+
+  double best_decrease = 0;
+  double best_value = 0;
+  size_t best_varID = std::numeric_limits<size_t>::max();
+
+  for (size_t varID : possible_split_varIDs) {
+    findBestSplitValueKernel(nodeID, varID, num_samples_node, sum_total,
+                             parent_score, best_value, best_varID, best_decrease);
+  }
+
+  if (best_varID == std::numeric_limits<size_t>::max()) {
+    return true;
+  }
+
+  split_varIDs[nodeID] = best_varID;
+  split_values[nodeID] = best_value;
+
+  if (save_node_stats) {
+    split_stats[nodeID] = best_decrease;
+  }
+  if (importance_mode == IMP_GINI || importance_mode == IMP_GINI_CORRECTED) {
+    addImpurityImportance(nodeID, best_varID, best_decrease);
+  }
+
+  saveSplitVarID(best_varID);
+  return false;
+}
+
+void TreeRegression::findBestSplitValueKernel(
+    size_t nodeID,
+    size_t varID,
+    size_t num_samples_node,
+    const std::vector<double>& sum_total,
+    double parent_score,
+    double& best_value,
+    size_t& best_varID,
+    double& best_decrease) {
+  if (!data->isOrderedVariable(varID)) {
+    throw std::runtime_error(
+        "OKRF currently supports numeric ordered predictors only.");
+  }
+
+  const size_t rank = output_features.rank;
+  std::vector<std::pair<double, size_t>> ordered_samples;
+  ordered_samples.reserve(num_samples_node);
+
+  for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
+    const size_t sampleID = sampleIDs[pos];
+    const double x_value = data->get_x(sampleID, varID);
+
+    if (!std::isfinite(x_value)) {
+      throw std::runtime_error(
+          "OKRF currently requires predictors without missing values.");
+    }
+    ordered_samples.push_back(std::make_pair(x_value, sampleID));
+  }
+
+  std::sort(ordered_samples.begin(), ordered_samples.end(),
+            [](const std::pair<double, size_t>& a,
+               const std::pair<double, size_t>& b) {
+              return a.first < b.first;
+            });
+
+  std::vector<double> sum_left(rank, 0);
+
+  for (size_t i = 0; i + 1 < ordered_samples.size(); ++i) {
+    const size_t row =
+      output_features.rowForSample(ordered_samples[i].second);
+
+    for (size_t k = 0; k < rank; ++k) {
+      sum_left[k] += output_features(row, k);
+    }
+
+    if (ordered_samples[i].first == ordered_samples[i + 1].first) {
+      continue;
+    }
+
+    const size_t n_left = i + 1;
+    const size_t n_right = num_samples_node - n_left;
+
+    if (n_left < (*min_bucket)[0] || n_right < (*min_bucket)[0]) {
+      continue;
+    }
+
+    double child_score = 0;
+    for (size_t k = 0; k < rank; ++k) {
+      const double sum_right = sum_total[k] - sum_left[k];
+      child_score += sum_left[k] * sum_left[k] / n_left +
+        sum_right * sum_right / n_right;
+    }
+
+    double decrease = child_score - parent_score;
+    regularize(decrease, varID);
+
+    if (decrease > best_decrease) {
+      best_decrease = decrease;
+      best_varID = varID;
+      best_value = ordered_samples[i].first +
+        (ordered_samples[i + 1].first - ordered_samples[i].first) / 2;
+
+      if (best_value == ordered_samples[i + 1].first) {
+        best_value = ordered_samples[i].first;
+      }
+    }
+  }
 }
 
 void TreeRegression::findBestSplitValueSmallQ(size_t nodeID, size_t varID, double sum_node, size_t num_samples_node,

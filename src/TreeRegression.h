@@ -16,6 +16,7 @@
 
 #include "globals.h"
 #include "Tree.h"
+#include "OutputKernelFeatures.h"
 
 namespace ranger {
 
@@ -90,6 +91,12 @@ private:
       double& best_value, size_t& best_varID, double& best_decrease, std::vector<double> possible_split_values,
       std::vector<double>& sums, std::vector<size_t>& counter);
 
+  bool findBestSplitKernel(size_t nodeID, std::vector<size_t>& possible_split_varIDs);
+  void findBestSplitValueKernel(size_t nodeID, size_t varID, size_t num_samples_node, const std::vector<double>& sum_total,
+                                double parent_score, double& best_value, size_t& best_varID, double& best_decrease);
+
+  void initializeOutputFeatures();
+
   void findBestSplitValueNanSmallQ(size_t nodeID, size_t varID, double sum_node, size_t num_samples_node,
                                    double& best_value, size_t& best_varID, double& best_decrease);
   void findBestSplitValueNanSmallQ(size_t nodeID, size_t varID, double sum_node, size_t num_samples_node,
@@ -116,10 +123,14 @@ private:
     counter.shrink_to_fit();
     sums.clear();
     sums.shrink_to_fit();
+    output_features.sample_ids.clear();
+    output_features.z.clear();
+    output_features.rank = 0;
   }
 
   std::vector<size_t> counter;
   std::vector<double> sums;
+  OutputFeatures output_features;
 };
 
 } // namespace ranger
