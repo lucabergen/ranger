@@ -56,7 +56,7 @@ double TreeRegression::estimate(size_t nodeID) {
     // We use a weighted average of parent and child mean values,
     // see vignette "Introduction to Rpart" Chapter 8.2 and
     // https://ssrn.com/abstract=2870308 Chapter 6.1.3
-
+    
     // Search for parent's nodeID: loop over all nodeIDs
     size_t parent_nodeID = 0;
     bool found = false;
@@ -80,7 +80,7 @@ double TreeRegression::estimate(size_t nodeID) {
         }
       }
     }
-
+    
     double sum_responses_in_parent = sumNodeResponse(parent_nodeID);
     size_t num_samples_in_parent = end_pos[parent_nodeID] - start_pos[parent_nodeID];
     double mean_node = (sum_responses_in_node / (double) num_samples_in_node);
@@ -99,7 +99,7 @@ void TreeRegression::appendToFileInternal(std::ofstream& file) { // #nocov start
 bool TreeRegression::splitNodeInternal(size_t nodeID, std::vector<size_t>& possible_split_varIDs) {
 
   size_t num_samples_node = end_pos[nodeID] - start_pos[nodeID];
-
+  
   // Save node statistics
   if (save_node_stats) {
     num_samples_nodes[nodeID] = num_samples_node;
@@ -229,9 +229,9 @@ bool TreeRegression::findBestSplit(size_t nodeID, std::vector<size_t>& possible_
             }
           } else {
             if (data->hasNA()) {
-              findBestSplitValueNanLargeQ(nodeID, varID, sum_node, num_samples_node, best_value, best_varID, best_decrease);
+              findBestSplitValueNanLargeQ(nodeID, varID, sum_node, num_samples_node, best_value, best_varID, best_decrease); 
             } else {
-              findBestSplitValueLargeQ(nodeID, varID, sum_node, num_samples_node, best_value, best_varID, best_decrease);
+              findBestSplitValueLargeQ(nodeID, varID, sum_node, num_samples_node, best_value, best_varID, best_decrease); 
             }
           }
         }
@@ -249,7 +249,7 @@ bool TreeRegression::findBestSplit(size_t nodeID, std::vector<size_t>& possible_
   // Save best values
   split_varIDs[nodeID] = best_varID;
   split_values[nodeID] = best_value;
-
+  
   // Save split statistics
   if (save_node_stats) {
     split_stats[nodeID] = best_decrease;
@@ -781,7 +781,7 @@ bool TreeRegression::findBestSplitMaxstat(size_t nodeID, std::vector<size_t>& po
     // If not terminal node save best values
     split_varIDs[nodeID] = best_varID;
     split_values[nodeID] = best_value;
-
+    
     // Save split statistics
     if (save_node_stats) {
       split_stats[nodeID] = best_maxstat;
@@ -808,7 +808,7 @@ bool TreeRegression::findBestSplitExtraTrees(size_t nodeID, std::vector<size_t>&
 
   // Stop early if no split posssible
   if (num_samples_node >= 2 * (*min_bucket)[0]) {
-
+  
     // For all possible split variables
     for (auto& varID : possible_split_varIDs) {
 
@@ -830,7 +830,7 @@ bool TreeRegression::findBestSplitExtraTrees(size_t nodeID, std::vector<size_t>&
   // Save best values
   split_varIDs[nodeID] = best_varID;
   split_values[nodeID] = best_value;
-
+  
   // Save split statistics
   if (save_node_stats) {
     split_stats[nodeID] = best_decrease;
@@ -1064,7 +1064,7 @@ bool TreeRegression::findBestSplitBeta(size_t nodeID, std::vector<size_t>& possi
   // Save best values
   split_varIDs[nodeID] = best_varID;
   split_values[nodeID] = best_value;
-
+  
   // Save split statistics
   if (save_node_stats) {
     split_stats[nodeID] = best_decrease;
@@ -1218,57 +1218,57 @@ void TreeRegression::findBestSplitValueBeta(size_t nodeID, size_t varID, double 
 }
 
 bool TreeRegression::findBestSplitPoisson(size_t nodeID, std::vector<size_t>& possible_split_varIDs) {
-
+  
   size_t num_samples_node = end_pos[nodeID] - start_pos[nodeID];
   double best_decrease = -std::numeric_limits<double>::infinity();
   size_t best_varID = 0;
   double best_value = 0;
-
+  
   // Compute sum of responses in node
   double sum_node = sumNodeResponse(nodeID);
-
+  
   // Stop early if no split posssible
   if (num_samples_node >= 2 * (*min_bucket)[0]) {
-
+    
     // For all possible split variables find best split value
     for (auto& varID : possible_split_varIDs) {
       findBestSplitValuePoissonSmallQ(nodeID, varID, sum_node, num_samples_node, best_value, best_varID,
                                       best_decrease);
     }
   }
-
+  
   // Stop if no good split found
   if (std::isinf(-best_decrease)) {
     return true;
   }
-
+  
   // Save best values
   split_varIDs[nodeID] = best_varID;
   split_values[nodeID] = best_value;
-
+  
   // Compute decrease of impurity for this node and add to variable importance if needed
   if (importance_mode == IMP_GINI || importance_mode == IMP_GINI_CORRECTED) {
     addImpurityImportance(nodeID, best_varID, best_decrease);
   }
-
+  
   // Regularization
   saveSplitVarID(best_varID);
-
+  
   return false;
 }
 
 void TreeRegression::findBestSplitValuePoissonSmallQ(size_t nodeID, size_t varID, double sum_node,
                                                      size_t num_samples_node, double& best_value, size_t& best_varID, double& best_decrease) {
-
+  
   // Create possible split values
   std::vector<double> possible_split_values;
   data->getAllValues(possible_split_values, sampleIDs, varID, start_pos[nodeID], end_pos[nodeID]);
-
+  
   // Try next variable if all equal for this
   if (possible_split_values.size() < 2) {
     return;
   }
-
+  
   // -1 because no split possible at largest value
   const size_t num_splits = possible_split_values.size() - 1;
   if (memory_saving_splitting) {
@@ -1287,71 +1287,71 @@ void TreeRegression::findBestSplitValuePoissonSmallQ(size_t nodeID, size_t varID
 void TreeRegression::findBestSplitValuePoissonSmallQ(size_t nodeID, size_t varID, double sum_node, size_t num_samples_node,
                                                      double& best_value, size_t& best_varID, double& best_decrease, std::vector<double> possible_split_values,
                                                      std::vector<double>& sums, std::vector<size_t>& counter) {
-
+  
   // Sum and sample count for possbile splits
   for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
     size_t sampleID = sampleIDs[pos];
     size_t idx = std::lower_bound(possible_split_values.begin(), possible_split_values.end(),
                                   data->get_x(sampleID, varID)) - possible_split_values.begin();
-
+    
     sums[idx] += data->get_y(sampleID, 0);
     ++counter[idx];
   }
-
+  
   size_t n_left = 0;
   double sum_left = 0;
-
+  
   // Compute decrease in Poisson deviance for each possible split
   for (size_t i = 0; i < possible_split_values.size() - 1; ++i) {
-
+    
     // Stop if nothing here
     if (counter[i] == 0) {
       continue;
     }
-
+    
     n_left += counter[i];
     sum_left += sums[i];
-
+    
     // Stop if right child empty
     size_t n_right = num_samples_node - n_left;
     if (n_right == 0) {
       break;
     }
-
+    
     // Stop if minimal bucket size reached
     if (n_left < (*min_bucket)[0] || n_right < (*min_bucket)[0]) {
       continue;
     }
-
+    
     // Compute mean
     double sum_right = sum_node - sum_left;
     double mean_right = sum_right / (double) n_right;
     double mean_left = sum_left / (double) n_left;
-
+    
     // Poisson deviance = 2 * (y_true * log(y_true/y_pred) + y_pred - y_true)
     // decrease = - 1/2 * (sum_left(poisson_deviance) + sum_right(poisson_deviance))
     //          = + sum_left(y) * log(mean_left) + sum_right(y) * log(mean_right) + const + 0
     // The smaller the deviance, the better => the larger the decrease, the better.
     double decrease = xlogy(sum_left, mean_left) + xlogy(sum_right, mean_right);
-
+    
     // Stop if no result
     if (std::isnan(decrease)) {
       continue;
     }
-
+    
     // Regularization
     if (decrease > 0) {
       regularize(decrease, varID);
     } else {
       regularizeNegative(decrease, varID);
     }
-
+    
     // If better than before, use this
     if (decrease > best_decrease) {
       best_value = (possible_split_values[i] + possible_split_values[i + 1]) / 2;
       best_varID = varID;
       best_decrease = decrease;
-
+      
       // Use smaller value if average is numerically the same as the larger value
       if (best_value == possible_split_values[i + 1]) {
         best_value = possible_split_values[i];
@@ -1362,16 +1362,16 @@ void TreeRegression::findBestSplitValuePoissonSmallQ(size_t nodeID, size_t varID
 
 void TreeRegression::findBestSplitValueNanSmallQ(size_t nodeID, size_t varID, double sum_node, size_t num_samples_node,
                                                  double& best_value, size_t& best_varID, double& best_decrease) {
-
+  
   // Create possible split values
   std::vector<double> possible_split_values;
   data->getAllValues(possible_split_values, sampleIDs, varID, start_pos[nodeID], end_pos[nodeID]);
-
+  
   // Try next variable if all equal for this
   if (possible_split_values.size() < 2) {
     return;
   }
-
+  
   const size_t num_splits = possible_split_values.size();
   if (memory_saving_splitting) {
     std::vector<double> sums_right(num_splits);
@@ -1389,23 +1389,23 @@ void TreeRegression::findBestSplitValueNanSmallQ(size_t nodeID, size_t varID, do
 void TreeRegression::findBestSplitValueNanSmallQ(size_t nodeID, size_t varID, double sum_node, size_t num_samples_node,
                                                  double& best_value, size_t& best_varID, double& best_decrease, std::vector<double> possible_split_values,
                                                  std::vector<double>& sums, std::vector<size_t>& counter) {
-
+  
   // Counters without NaNs
   double sum_nan = 0;
   size_t num_samples_node_nan = 0;
-
+  
   size_t last_index = possible_split_values.size() - 1;
   if (std::isnan(possible_split_values[last_index])) {
     for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
       size_t sampleID = sampleIDs[pos];
-
+      
       if (std::isnan(data->get_x(sampleID, varID))) {
         sum_nan += data->get_y(sampleID, 0);
         ++num_samples_node_nan;
       } else {
         size_t idx = std::lower_bound(possible_split_values.begin(), possible_split_values.end(),
                                       data->get_x(sampleID, varID)) - possible_split_values.begin();
-
+        
         sums[idx] += data->get_y(sampleID, 0);
         ++counter[idx];
       }
@@ -1415,65 +1415,65 @@ void TreeRegression::findBestSplitValueNanSmallQ(size_t nodeID, size_t varID, do
       size_t sampleID = sampleIDs[pos];
       size_t idx = std::lower_bound(possible_split_values.begin(), possible_split_values.end(),
                                     data->get_x(sampleID, varID)) - possible_split_values.begin();
-
+      
       sums[idx] += data->get_y(sampleID, 0);
       ++counter[idx];
     }
   }
-
+  
   size_t n_left = 0;
   double sum_left = 0;
-
+  
   // Compute decrease of impurity for each split
   for (size_t i = 0; i < possible_split_values.size() - 1; ++i) {
-
+    
     // Stop if nothing here
     if (counter[i] == 0) {
       continue;
     }
-
+    
     n_left += counter[i];
     sum_left += sums[i];
-
+    
     // Stop if right child empty
     size_t n_right = num_samples_node - num_samples_node_nan - n_left;
     if (n_right == 0) {
       break;
     }
-
+    
     // Stop if minimal bucket size reached
     if (n_left < (*min_bucket)[0] || n_right < (*min_bucket)[0]) {
       continue;
     }
-
+    
     double sum_right = sum_node - sum_left - sum_nan;
 
     double decrease_nanleft = (sum_left + sum_nan) * (sum_left + sum_nan)  / (double) (n_left + num_samples_node_nan) + sum_right * sum_right / (double) n_right;
     double decrease_nanright = sum_left * sum_left / (double) n_left + (sum_right + sum_nan)  * (sum_right + sum_nan)  / (double) (n_right + num_samples_node_nan);
-
+    
     double decrease;
     if (decrease_nanright > decrease_nanleft) {
       decrease = decrease_nanright;
     } else {
       decrease = decrease_nanleft;
     }
-
+    
     // Regularization
     regularize(decrease, varID);
-
+    
     // If better than before, use this
     if (decrease > best_decrease) {
       // Use mid-point split
       best_value = (possible_split_values[i] + possible_split_values[i + 1]) / 2;
       best_varID = varID;
       best_decrease = decrease;
-
+      
       if (decrease_nanright > decrease_nanleft) {
         nan_go_right = true;
       } else {
         nan_go_right = false;
       }
-
+      
       // Use smaller value if average is numerically the same as the larger value
       if (best_value == possible_split_values[i + 1]) {
         best_value = possible_split_values[i];
@@ -1484,21 +1484,21 @@ void TreeRegression::findBestSplitValueNanSmallQ(size_t nodeID, size_t varID, do
 
 void TreeRegression::findBestSplitValueNanLargeQ(size_t nodeID, size_t varID, double sum_node, size_t num_samples_node,
                                                  double& best_value, size_t& best_varID, double& best_decrease) {
-
+  
   // Set counters to 0
   size_t num_unique = data->getNumUniqueDataValues(varID);
   std::fill_n(counter.begin(), num_unique, 0);
   std::fill_n(sums.begin(), num_unique, 0);
-
+  
   // Counters without NaNs
   double sum_nan = 0;
   size_t num_samples_node_nan = 0;
-
+  
   size_t last_index = data->getNumUniqueDataValues(varID) - 1;
   if (std::isnan(data->getUniqueDataValue(varID, last_index))) {
     for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
       size_t sampleID = sampleIDs[pos];
-
+      
       if (std::isnan(data->get_x(sampleID, varID))) {
         sum_nan += data->get_y(sampleID, 0);
         ++num_samples_node_nan;
@@ -1512,53 +1512,53 @@ void TreeRegression::findBestSplitValueNanLargeQ(size_t nodeID, size_t varID, do
     for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
       size_t sampleID = sampleIDs[pos];
       size_t index = data->getIndex(sampleID, varID);
-
+      
       sums[index] += data->get_y(sampleID, 0);
       ++counter[index];
     }
   }
-
-
+  
+  
   size_t n_left = 0;
   double sum_left = 0;
-
+  
   // Compute decrease of impurity for each split
   for (size_t i = 0; i < num_unique - 1; ++i) {
-
+    
     // Stop if nothing here
     if (counter[i] == 0) {
       continue;
     }
-
+    
     n_left += counter[i];
     sum_left += sums[i];
-
+    
     // Stop if right child empty
     size_t n_right = num_samples_node - num_samples_node_nan - n_left;
     if (n_right == 0) {
       break;
     }
-
+    
     // Stop if minimal bucket size reached
     if (n_left < (*min_bucket)[0] || n_right < (*min_bucket)[0]) {
       continue;
     }
-
+    
     double sum_right = sum_node - sum_left;
 
     double decrease_nanleft = (sum_left + sum_nan) * (sum_left + sum_nan)  / (double) (n_left + num_samples_node_nan) + sum_right * sum_right / (double) n_right;
     double decrease_nanright = sum_left * sum_left / (double) n_left + (sum_right + sum_nan)  * (sum_right + sum_nan)  / (double) (n_right + num_samples_node_nan);
-
+    
     double decrease;
     if (decrease_nanright > decrease_nanleft) {
       decrease = decrease_nanright;
     } else {
       decrease = decrease_nanleft;
     }
-
+    
     // Regularization
     regularize(decrease, varID);
-
+    
     // If better than before, use this
     if (decrease > best_decrease) {
       // Find next value in this node
@@ -1566,18 +1566,18 @@ void TreeRegression::findBestSplitValueNanLargeQ(size_t nodeID, size_t varID, do
       while (j < num_unique && counter[j] == 0) {
         ++j;
       }
-
+      
       // Use mid-point split
       best_value = (data->getUniqueDataValue(varID, i) + data->getUniqueDataValue(varID, j)) / 2;
       best_varID = varID;
       best_decrease = decrease;
-
+      
       if (decrease_nanright > decrease_nanleft) {
         nan_go_right = true;
       } else {
         nan_go_right = false;
       }
-
+      
       // Use smaller value if average is numerically the same as the larger value
       if (best_value == data->getUniqueDataValue(varID, j)) {
         best_value = data->getUniqueDataValue(varID, i);

@@ -188,7 +188,7 @@ public:
     }
     return varID;
   }
-
+  
   const bool hasNA() const {
     return any_na;
   }
@@ -229,7 +229,7 @@ protected:
   // Order of 0/1/2 for ordered splitting
   std::vector<std::vector<size_t>> snp_order;
   bool order_snps;
-
+  
   // Any missing values?
   bool any_na;
 };

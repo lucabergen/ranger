@@ -53,7 +53,7 @@ private:
   void createEmptyNodeInternal() override;
 
   double computePredictionAccuracyInternal(std::vector<double>* prediction_error_casewise) override;
-
+  
   // Called by splitNodeInternal(). Sets split_varIDs and split_values.
   bool findBestSplit(size_t nodeID, std::vector<size_t>& possible_split_varIDs);
   void findBestSplitValueSmallQ(size_t nodeID, size_t varID, double sum_node, size_t num_samples_node,
@@ -83,7 +83,7 @@ private:
   void findBestSplitValueBeta(size_t nodeID, size_t varID, double sum_node, size_t num_samples_node, double& best_value,
       size_t& best_varID, double& best_decrease, std::vector<double> possible_split_values,
       std::vector<double>& sums_right, std::vector<size_t>& n_right);
-
+  
   bool findBestSplitPoisson(size_t nodeID, std::vector<size_t>& possible_split_varIDs);
   void findBestSplitValuePoissonSmallQ(size_t nodeID, size_t varID, double sum_node, size_t num_samples_node,
       double& best_value, size_t& best_varID, double& best_decrease);
@@ -108,7 +108,7 @@ private:
   void addImpurityImportance(size_t nodeID, size_t varID, double decrease);
 
   double computePredictionMSE();
-
+  
   // Compute sum of responses in node. As in-class definition, this is inline by default.
   double sumNodeResponse(size_t nodeID) {
     double sum_node = 0;

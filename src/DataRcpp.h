@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------------
  This file is part of Ranger.
-
+ 
  Ranger is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
@@ -49,12 +49,12 @@ public:
       this->num_cols_no_snp = num_cols;
       this->any_na = any_na;
     }
-
+  
   DataRcpp(const DataRcpp&) = delete;
   DataRcpp& operator=(const DataRcpp&) = delete;
-
+  
   virtual ~DataRcpp() override = default;
-
+  
   double get_x(size_t row, size_t col) const override {
     // Use permuted data for corrected impurity importance
     size_t col_permuted = col;
@@ -62,32 +62,32 @@ public:
       col = getUnpermutedVarID(col);
       row = getPermutedSampleID(row);
     }
-
+    
     if (col < num_cols_no_snp) {
       return x(row, col);
     } else {
       return getSnp(row, col, col_permuted);
     }
   }
-
+  
   double get_y(size_t row, size_t col) const override {
     return y(row, col);
   }
-
-  // #nocov start
+  
+  // #nocov start 
   void reserveMemory(size_t y_cols) override {
     // Not needed
   }
-
+  
   void set_x(size_t col, size_t row, double value, bool& error) override {
     x(row, col) = value;
   }
-
+  
   void set_y(size_t col, size_t row, double value, bool& error) override {
     y(row, col) = value;
   }
-  // #nocov end
-
+  // #nocov end 
+  
 private:
   Rcpp::NumericMatrix x;
   Rcpp::NumericMatrix y;
