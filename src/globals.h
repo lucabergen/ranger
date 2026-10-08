@@ -70,6 +70,13 @@ enum PredictionType {
   TERMINALNODES = 2
 };
 
+// Output representation for output kernel trees/forests
+enum OutputRepresentation {
+  OUTPUT_REPRESENTATION_NONE = 0,
+  OUTPUT_REPRESENTATION_FEATURES = 1,
+  OUTPUT_REPRESENTATION_GRAM = 2
+};
+
 // Default values
 const uint DEFAULT_NUM_TREE = 500;
 const uint DEFAULT_NUM_THREADS = 0;
