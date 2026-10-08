@@ -1,6 +1,6 @@
 
 ##' @export
-OKranger <- function(Phi = NULL, K = NULL, x, tau, num.trees = 500, 
+OKranger <- function(Phi = NULL, K = NULL, x, approx.tolerance, num.trees = 500, 
                      mtry = NULL, write.forest = TRUE, min.node.size = NULL, 
                      min.bucket = NULL, max.depth = NULL, replace = TRUE, 
                      sample.fraction = ifelse(replace, 1, 0.632), 
@@ -23,9 +23,9 @@ OKranger <- function(Phi = NULL, K = NULL, x, tau, num.trees = 500,
     warning("Both 'Phi' and 'K' were specified; only 'Phi' will be used.")
   }
   
-  if (!is.numeric(tau) || length(tau) != 1L ||
-      !is.finite(tau) || tau <= 0) {
-    stop("'tau' must be a single finite number greater than 0.")
+  if (!is.numeric(approx.tolerance) || length(approx.tolerance) != 1L ||
+      !is.finite(approx.tolerance) || approx.tolerance <= 0) {
+    stop("'approx.tolerance' must be a single finite number greater than 0.")
   }
   
   if (!is.data.frame(x)) {
@@ -288,7 +288,7 @@ OKranger <- function(Phi = NULL, K = NULL, x, tau, num.trees = 500,
     time_interest = c(0, 0),
     use_time_interest = FALSE,
     any_na = FALSE,
-    tau = tau,
+    approx_tolerance = approx.tolerance,
     output_representation = output.representation
   )
   
