@@ -1,11 +1,11 @@
 #ifndef FORESTKERNEL_H_
 #define FORESTKERNEL_H_
 
-#include "ForestRegression.h"
+#include "Forest.h"
 
 namespace ranger {
 
-class ForestKernel: public ForestRegression {
+class ForestKernel: public Forest {
 public:
   ForestKernel() = default;
   ForestKernel(const ForestKernel&) = delete;
@@ -15,6 +15,14 @@ public:
 private:
   void initInternal() override;
   void growInternal() override;
+  void allocatePredictMemory() override;
+  void predictInternal(size_t sample_idx) override;
+  void computePredictionErrorInternal() override;
+  void writeOutputInternal() override;
+  void writeConfusionFile() override;
+  void writePredictionFile() override;
+  void saveToFileInternal(std::ofstream& outfile) override;
+  void loadFromFileInternal(std::ifstream& infile) override;
 };
 
 } // namespace ranger
