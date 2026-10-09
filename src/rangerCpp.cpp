@@ -37,6 +37,7 @@
 #include "ForestRegression.h"
 #include "ForestSurvival.h"
 #include "ForestProbability.h"
+#include "ForestKernel.h"
 #include "Data.h"
 #include "DataChar.h"
 #include "DataRcpp.h"
@@ -150,6 +151,9 @@ Rcpp::List rangerCpp(uint treetype, Rcpp::NumericMatrix& input_x, Rcpp::NumericM
       break;
     case TREE_REGRESSION:
       forest = std::make_unique<ForestRegression>();
+      break;
+    case TREE_KERNEL:
+      forest = std::make_unique<ForestKernel>();
       break;
     case TREE_SURVIVAL:
       forest = std::make_unique<ForestSurvival>();

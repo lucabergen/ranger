@@ -236,7 +236,7 @@ OKranger <- function(Phi = NULL, K = NULL, x, approx.tolerance, num.trees = 500,
   }
   
   result <- rangerCpp(
-    treetype = 10L,           # TODO: Must match TREE_OUTPUT_KERNEL in globals.h
+    treetype = 10L,
     input_x = x,
     input_y = y.mat,
     variable_names = independent.variable.names,
@@ -261,7 +261,7 @@ OKranger <- function(Phi = NULL, K = NULL, x, approx.tolerance, num.trees = 500,
     unordered_variable_names = c("0", "0"),
     use_unordered_variable_names = FALSE,
     save_memory = FALSE,
-    splitrule_r = 9L,                   # TODO: Has to match KERNEL in globals.h
+    splitrule_r = 9L,
     case_weights = c(0, 0),
     use_case_weights = FALSE,
     class_weights = numeric(0),
