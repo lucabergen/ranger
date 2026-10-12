@@ -1,8 +1,14 @@
+#include <algorithm>
+#include <cmath>
 #include <fstream>
+#include <limits>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "TreeKernel.h"
+#include "ApproxFeatures.h"
+#include "Data.h"
 
 namespace ranger {
 
@@ -14,23 +20,220 @@ void TreeKernel::appendToFileInternal(std::ofstream& file) {
   throw std::logic_error("TreeKernel serialization is not implemented yet.");
 }
 
-bool TreeKernel::splitNodeInternal(
-    size_t nodeID, std::vector<size_t>& possible_split_varIDs) {
-  (void) nodeID;
-  (void) possible_split_varIDs;
-  throw std::logic_error("TreeKernel split search is not implemented yet.");
+bool TreeKernel::splitNodeInternal(size_t nodeID, std::vector<size_t>& possible_split_varIDs) {
+
+  const size_t num_samples_node = end_pos[nodeID] - start_pos[nodeID];
+
+  if (save_node_stats) {
+    num_samples_nodes[nodeID] = num_samples_node;
+    // A scalar node prediction is not defined for a vector-valued response.
+    node_predictions[nodeID] = std::numeric_limits<double>::quiet_NaN();
+  }
+
+  if (num_samples_node <= (*min_node_size)[0] ||
+      (nodeID >= last_left_nodeID && max_depth > 0 && depth >= max_depth)) {
+    split_values[nodeID] = 0.0;
+    return true;
+  }
+
+  const bool stop = findBestSplit(nodeID, possible_split_varIDs);
+  if (stop) {
+    split_values[nodeID] = 0.0;
+  }
+  return stop;
 }
 
 void TreeKernel::createEmptyNodeInternal() {
+  if (save_node_stats) {
+    node_predictions.push_back(std::numeric_limits<double>::quiet_NaN());
+  }
 }
 
-double TreeKernel::computePredictionAccuracyInternal(
-    std::vector<double>* prediction_error_casewise) {
+double TreeKernel::computePredictionAccuracyInternal(std::vector<double>* prediction_error_casewise) {
   (void) prediction_error_casewise;
   throw std::logic_error("TreeKernel prediction accuracy is not implemented yet.");
 }
 
 void TreeKernel::cleanUpInternal() {
+}
+
+double TreeKernel::kernelScore(const std::vector<double>& sum, size_t n) const {
+  if (n == 0) {
+    return 0.0;
+  }
+
+  double score = 0.0;
+  for (double value : sum) {
+    score += value * value / static_cast<double>(n);
+  }
+  return score;
+}
+
+double TreeKernel::splitScore(const std::vector<double>& sum_left, const std::vector<double>& sum_right,
+    size_t n_left, size_t n_right) const {
+  return kernelScore(sum_left, n_left) + kernelScore(sum_right, n_right);
+}
+
+bool TreeKernel::findBestSplit(size_t nodeID, std::vector<size_t>& possible_split_varIDs) {
+
+  const size_t num_samples_node = end_pos[nodeID] - start_pos[nodeID];
+  // Rank-equivalent child score; parent_score is constant across candidates
+  double best_score = -1.0;
+  size_t best_varID = 0;
+  double best_value = 0.0;
+
+  // Stop early if no split posssible
+  if (num_samples_node < 2 * (*min_bucket)[0]) {
+    return true;
+  }
+
+  if (approx_features == nullptr) {
+    throw std::logic_error("TreeKernel requires forest-wide output features.");
+  }
+
+  const size_t rank = approx_features->rank;
+  if (rank == 0) {
+    return true;
+  }
+
+  std::vector<double> sum_total(rank, 0.0);
+  std::vector<double> first_output(rank, 0.0);
+  bool first_sample = true;
+  bool pure = true;
+
+  for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
+    const size_t sample_id = sampleIDs[pos];
+
+    for (size_t feature = 0; feature < rank; ++feature) {
+      const double value = approx_features->get(sample_id, feature);
+      sum_total[feature] += value;
+
+      if (first_sample) {
+        first_output[feature] = value;
+      } else if (value != first_output[feature]) {
+        pure = false;
+      }
+    }
+    first_sample = false;
+  }
+
+  // Stop when every sample has the same projected output vector.
+  if (pure) {
+    return true;
+  }  
+
+  // For all possible split variables
+  for (size_t varID : possible_split_varIDs) {
+    findBestSplitValue(nodeID, varID, num_samples_node, sum_total,
+        best_value, best_varID, best_score);
+  }
+
+  // Stop if no good split found
+  if (best_score < 0.0) {
+    return true;
+  }
+
+  // Save best values
+  split_varIDs[nodeID] = best_varID;
+  split_values[nodeID] = best_value;
+
+  // Save split statistics
+  if (save_node_stats) {
+    split_stats[nodeID] = best_score;
+  }
+
+  if (importance_mode == IMP_GINI || importance_mode == IMP_GINI_CORRECTED) {
+    addImpurityImportance(nodeID, best_varID, best_score, sum_total);
+  }
+
+  saveSplitVarID(best_varID);
+  return false;
+}
+
+void TreeKernel::findBestSplitValue(size_t nodeID, size_t varID, size_t num_samples_node, 
+  const std::vector<double>& sum_total, double& best_value, size_t& best_varID, double& best_score) {
+
+  if (!data->isOrderedVariable(varID)) {
+    throw std::runtime_error(
+        "OKranger currently supports numeric ordered predictors only.");
+  }
+
+  const size_t rank = approx_features->rank;
+  std::vector<std::pair<double, size_t>> ordered_samples;
+  ordered_samples.reserve(num_samples_node);
+
+  for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
+    const size_t sample_id = sampleIDs[pos];
+    const double x_value = data->get_x(sample_id, varID);
+
+    if (!std::isfinite(x_value)) {
+      throw std::runtime_error(
+          "OKranger currently requires finite predictors without missing values.");
+    }
+    ordered_samples.emplace_back(x_value, sample_id);
+  }
+
+  std::sort(ordered_samples.begin(), ordered_samples.end());
+
+  std::vector<double> sum_left(rank, 0.0);
+  std::vector<double> sum_right(rank, 0.0);
+
+  for (size_t i = 0; i + 1 < ordered_samples.size(); ++i) {
+    const size_t sample_id = ordered_samples[i].second;
+    for (size_t feature = 0; feature < rank; ++feature) {
+      sum_left[feature] += approx_features->get(sample_id, feature);
+    }
+
+    const double x_left = ordered_samples[i].first;
+    const double x_right = ordered_samples[i + 1].first;
+    if (x_left == x_right) {
+      continue;
+    }
+
+    const size_t n_left = i + 1;
+    const size_t n_right = num_samples_node - n_left;
+    if (n_left < (*min_bucket)[0] || n_right < (*min_bucket)[0]) {
+      continue;
+    }
+
+    for (size_t feature = 0; feature < rank; ++feature) {
+      sum_right[feature] = sum_total[feature] - sum_left[feature];
+    }
+
+    double candidate_score = splitScore(sum_left, sum_right, n_left, n_right);
+    regularize(candidate_score, varID);
+
+    if (candidate_score > best_score) {
+      best_score = candidate_score;
+      best_varID = varID;
+
+      if (x_left < 0.0 && x_right > 0.0) {
+        best_value = x_left / 2.0 + x_right / 2.0;
+      } else {
+        best_value = x_left + (x_right - x_left) / 2.0;
+      }
+      if (best_value < x_left || best_value >= x_right) {
+        best_value = x_left;
+      }
+    }
+  }
+}
+
+void TreeKernel::addImpurityImportance(size_t nodeID, size_t varID, double best_score, const std::vector<double>& sum_total) {
+
+  const size_t num_samples_node = end_pos[nodeID] - start_pos[nodeID];
+
+  double parent_score = kernelScore(sum_total, num_samples_node);
+  regularize(parent_score, varID);
+
+  const double gain = best_score - parent_score;
+  const size_t original_varID = data->getUnpermutedVarID(varID);
+
+  if (importance_mode == IMP_GINI_CORRECTED && varID >= data->getNumCols()) {
+    (*variable_importance)[original_varID] -= gain;
+  } else {
+    (*variable_importance)[original_varID] += gain;
+  }
 }
 
 } // namespace ranger

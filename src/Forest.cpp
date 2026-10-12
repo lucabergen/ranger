@@ -454,6 +454,9 @@ void Forest::grow() {
   // Call special grow functions of subclasses. There trees must be created.
   growInternal();
 
+  // Pointer to forest-owned features. Null for ordinary trees.
+  const ApproxFeatures* tree_approx_features = approxFeaturesForTree();
+
   // Init trees, create a seed for each tree, based on main seed
   std::uniform_int_distribution<uint> udist;
   for (size_t i = 0; i < num_trees; ++i) {
@@ -483,7 +486,8 @@ void Forest::grow() {
     trees[i]->init(data.get(), mtry, num_samples, tree_seed, &deterministic_varIDs, tree_split_select_weights,
         importance_mode, &min_node_size, &min_bucket, sample_with_replacement, memory_saving_splitting, splitrule, &case_weights,
         tree_manual_inbag, keep_inbag, &sample_fraction, alpha, minprop, poisson_tau, holdout, num_random_splits, max_depth,
-        &regularization_factor, regularization_usedepth, &split_varIDs_used, save_node_stats);
+        &regularization_factor, regularization_usedepth, &split_varIDs_used, save_node_stats,
+        tree_approx_features);
   }
 
   // Init variable importance

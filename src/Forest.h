@@ -28,6 +28,8 @@
 
 namespace ranger {
 
+struct ApproxFeatures;
+
 class Forest {
 public:
   Forest();
@@ -65,6 +67,9 @@ public:
       bool order_snps, uint max_depth, const std::vector<double>& regularization_factor, bool regularization_usedepth,
       bool node_stats, double approx_tolerance = 0, OutputRepresentation output_representation = OUTPUT_REPRESENTATION_NONE);
   virtual void initInternal() = 0;
+  virtual const ApproxFeatures* approxFeaturesForTree() const {
+    return nullptr;
+  }
 
   // Grow or predict
   void run(bool verbose, bool compute_oob_error);

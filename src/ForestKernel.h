@@ -2,6 +2,7 @@
 #define FORESTKERNEL_H_
 
 #include "Forest.h"
+#include "ApproxFeatures.h"
 
 namespace ranger {
 
@@ -23,6 +24,14 @@ private:
   void writePredictionFile() override;
   void saveToFileInternal(std::ofstream& outfile) override;
   void loadFromFileInternal(std::ifstream& infile) override;
+
+  void initializeApproxFeatures();
+  const ApproxFeatures* approxFeaturesForTree() const override {
+    return &approx_features;
+  }
+
+  // Forest-owned approximation initialized before tree growth.
+  ApproxFeatures approx_features;
 };
 
 } // namespace ranger
