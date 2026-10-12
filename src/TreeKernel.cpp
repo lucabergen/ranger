@@ -120,7 +120,7 @@ bool TreeKernel::findBestSplit(size_t nodeID, std::vector<size_t>& possible_spli
   // Stop when every sample has the same projected output vector.
   if (pure) {
     return true;
-  }  
+  }
 
   // For all possible split variables
   for (size_t varID : possible_split_varIDs) {
@@ -150,7 +150,7 @@ bool TreeKernel::findBestSplit(size_t nodeID, std::vector<size_t>& possible_spli
   return false;
 }
 
-void TreeKernel::findBestSplitValue(size_t nodeID, size_t varID, size_t num_samples_node, 
+void TreeKernel::findBestSplitValue(size_t nodeID, size_t varID, size_t num_samples_node,
   const std::vector<double>& sum_total, double& best_value, size_t& best_varID, double& best_score) {
 
   if (!data->isOrderedVariable(varID)) {
