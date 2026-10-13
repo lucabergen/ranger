@@ -1,15 +1,17 @@
 #ifndef TREEKERNEL_H_
 #define TREEKERNEL_H_
 
+#include <stdexcept>
 #include <vector>
 
+#include "globals.h"
 #include "Tree.h"
 
 namespace ranger {
 
 class TreeKernel: public Tree {
 public:
-  TreeKernel() = default;
+  explicit TreeKernel(OutputRepresentation output_representation);
 
   TreeKernel(const TreeKernel&) = delete;
   TreeKernel& operator=(const TreeKernel&) = delete;
@@ -19,6 +21,27 @@ public:
   void allocateMemory() override;
 
   void appendToFileInternal(std::ofstream& file) override;
+
+  // Returns the mean output features given by Phi in the terminal node reached by the sample
+  const std::vector<double>& getPrediction(size_t sampleID) const {
+    // Only defined for explicit feature representations
+    if (output_representation != OUTPUT_REPRESENTATION_FEATURES) {
+      throw std::logic_error("Leaf predictions are only available for explicit Phi outputs.");
+    }
+    const size_t terminal_nodeID = prediction_terminal_nodeIDs.at(sampleID);
+    return terminal_output_means.at(terminal_nodeID);
+  }
+
+  // Returns the ID of the terminal node reached by the sample
+  size_t getPredictionTerminalNodeID(size_t sampleID) const {
+    return prediction_terminal_nodeIDs.at(sampleID);
+  }
+
+  // Returns output means indexed by node ID; non-empty only when given Phi
+  // Entries of non-terminal nodes are empty, except when saving node statistics
+  const std::vector<std::vector<double>>& getTerminalOutputMeans() const {
+    return terminal_output_means;
+  }
 
 private:
   bool splitNodeInternal(size_t nodeID, std::vector<size_t>& possible_split_varIDs) override;
@@ -38,9 +61,23 @@ private:
       const std::vector<double>& sum_right, size_t n_left,
       size_t n_right) const;
 
+  // Returns true when explicit output features are available
+  bool storesLeafPredictions() const {
+    return output_representation == OUTPUT_REPRESENTATION_FEATURES;
+  }
+
+  // Computes and stores the explicit output feature mean in a terminal node
+  void addToTerminalNodes(size_t nodeID);
+
   void addImpurityImportance(size_t nodeID, size_t varID, double best_score, const std::vector<double>& sum_total);
 
   void cleanUpInternal() override;
+
+  const OutputRepresentation output_representation;
+
+  // Indexed by node ID; non-empty only when Phi is given
+  // Stores only means of terminal nodes, except when saving node statistics
+  std::vector<std::vector<double>> terminal_output_means;
 
 };
 

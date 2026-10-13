@@ -12,7 +12,45 @@
 
 namespace ranger {
 
+TreeKernel::TreeKernel(OutputRepresentation output_representation) :
+    output_representation(output_representation) {
+  if (output_representation != OUTPUT_REPRESENTATION_FEATURES &&
+      output_representation != OUTPUT_REPRESENTATION_GRAM) {
+    throw std::invalid_argument(
+        "TreeKernel requires Phi or K output data.");
+  }
+}
+
 void TreeKernel::allocateMemory() {
+}
+
+void TreeKernel::addToTerminalNodes(size_t nodeID) {
+  if (!storesLeafPredictions()) {
+    return;
+  }
+
+  const size_t num_samples_node = end_pos[nodeID] - start_pos[nodeID];
+  if (num_samples_node == 0) {
+    throw std::logic_error("Cannot compute an output mean for an empty terminal node.");
+  }
+
+  const size_t num_features = data->getNumColsY();
+  std::vector<double>& output_mean = terminal_output_means.at(nodeID);
+  output_mean.assign(num_features, 0.0);
+
+  // Iterate over bootstrap positions so duplicated sample IDs retain multiplicity
+  for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
+    const size_t sample_id = sampleIDs[pos];
+    for (size_t feature = 0; feature < num_features; ++feature) {
+      output_mean[feature] += data->get_y(sample_id, feature);
+    }
+  }
+
+  const double inverse_node_size = 1.0 / static_cast<double>(num_samples_node);
+
+  for (double& value : output_mean) {
+    value *= inverse_node_size;
+  }
 }
 
 void TreeKernel::appendToFileInternal(std::ofstream& file) {
@@ -26,24 +64,35 @@ bool TreeKernel::splitNodeInternal(size_t nodeID, std::vector<size_t>& possible_
 
   if (save_node_stats) {
     num_samples_nodes[nodeID] = num_samples_node;
-    // A scalar node prediction is not defined for a vector-valued response.
     node_predictions[nodeID] = std::numeric_limits<double>::quiet_NaN();
+
+    // Store an output mean for every node when returning node statistics
+    addToTerminalNodes(nodeID);
   }
 
-  if (num_samples_node <= (*min_node_size)[0] ||
-      (nodeID >= last_left_nodeID && max_depth > 0 && depth >= max_depth)) {
+  if (num_samples_node <= (*min_node_size)[0] || (nodeID >= last_left_nodeID && max_depth > 0 && depth >= max_depth)) {
     split_values[nodeID] = 0.0;
+    if (!save_node_stats) {
+      addToTerminalNodes(nodeID);
+    }
     return true;
   }
 
   const bool stop = findBestSplit(nodeID, possible_split_varIDs);
   if (stop) {
     split_values[nodeID] = 0.0;
+    if (!save_node_stats) {
+      addToTerminalNodes(nodeID);
+    }
   }
   return stop;
 }
 
 void TreeKernel::createEmptyNodeInternal() {
+  if (storesLeafPredictions()) {
+    terminal_output_means.emplace_back();
+  }
+
   if (save_node_stats) {
     node_predictions.push_back(std::numeric_limits<double>::quiet_NaN());
   }
