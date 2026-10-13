@@ -73,7 +73,76 @@ void ForestKernel::predictInternal(size_t sample_idx) {
 }
 
 void ForestKernel::computePredictionErrorInternal() {
-  throw std::logic_error("ForestKernel OOB prediction is not implemented yet.");
+  if (output_representation != OUTPUT_REPRESENTATION_FEATURES) {
+    throw std::runtime_error("OOB predictions are currently available only when Phi is supplied; use oob.error = FALSE for K.");
+  }
+
+  const size_t num_features = data->getNumColsY();
+  std::vector<size_t> samples_oob_count(num_samples, 0);
+  predictions = std::vector<std::vector<std::vector<double>>>(1, std::vector<std::vector<double>>(num_samples, std::vector<double>(num_features, 0.0)));
+
+  // Sum each trees Phi leaf mean only for samples that were OOB in that tree
+  for (size_t tree_idx = 0; tree_idx < num_trees; ++tree_idx) {
+    const auto& tree = dynamic_cast<const TreeKernel&>(*trees[tree_idx]);
+
+    for (size_t sample_idx = 0; sample_idx < tree.getNumSamplesOob(); ++sample_idx) {
+      const size_t sample_id = tree.getOobSampleIDs()[sample_idx];
+      const std::vector<double>& tree_prediction = tree.getPrediction(sample_idx);
+
+      if (tree_prediction.size() != num_features) {
+        throw std::logic_error("TreeKernel returned a leaf prediction with an unexpected dimension.");
+      }
+
+      for (size_t feature = 0; feature < num_features; ++feature) {
+        predictions[0][sample_id][feature] += tree_prediction[feature];
+      }
+      ++samples_oob_count[sample_id];
+    }
+  }
+
+  // Average OOB predictions and compute MSE
+  size_t num_predictions = 0;
+  overall_prediction_error = 0.0;
+
+  for (size_t sample_id = 0; sample_id < num_samples; ++sample_id) {
+    if (samples_oob_count[sample_id] == 0) {
+      std::fill(predictions[0][sample_id].begin(), predictions[0][sample_id].end(), std::numeric_limits<double>::quiet_NaN());
+      continue;
+    }
+
+    ++num_predictions;
+    double sample_error = 0.0;
+    const double inverse_oob_count = 1.0 / static_cast<double>(samples_oob_count[sample_id]);
+
+    for (size_t feature = 0; feature < num_features; ++feature) {
+      double& predicted_value = predictions[0][sample_id][feature];
+      predicted_value *= inverse_oob_count;
+
+      const double difference = predicted_value - data->get_y(sample_id, feature);
+      sample_error += difference * difference;
+    }
+
+    overall_prediction_error += sample_error;
+  }
+
+  if (num_predictions == 0) {
+    overall_prediction_error = std::numeric_limits<double>::quiet_NaN();
+  } else {
+    overall_prediction_error /= static_cast<double>(num_predictions);
+  }
+}
+
+std::vector<std::vector<std::vector<double>>>
+ForestKernel::getTerminalOutputMeans() const {
+  std::vector<std::vector<std::vector<double>>> result;
+  result.reserve(trees.size());
+
+  for (const auto& tree : trees) {
+    const auto& kernel_tree = dynamic_cast<const TreeKernel&>(*tree);
+    result.push_back(kernel_tree.getTerminalOutputMeans());
+  }
+
+  return result;
 }
 
 void ForestKernel::writeOutputInternal() {
@@ -83,7 +152,7 @@ void ForestKernel::writeOutputInternal() {
 }
 
 void ForestKernel::writeConfusionFile() {
-  // Kernel regression has no confusion matrix.
+  // Kernel regression has no confusion matrix
 }
 
 void ForestKernel::writePredictionFile() {

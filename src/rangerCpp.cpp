@@ -300,6 +300,9 @@ Rcpp::List rangerCpp(uint treetype, Rcpp::NumericMatrix& input_x, Rcpp::NumericM
         auto& temp = dynamic_cast<ForestProbability&>(*forest);
         forest_object.push_back(temp.getClassValues(), "class.values");
         forest_object.push_back(temp.getTerminalClassCounts(), "terminal.class.counts");
+      } else if (treetype == TREE_KERNEL) {
+        auto& temp = dynamic_cast<ForestKernel&>(*forest);
+        forest_object.push_back(temp.getTerminalOutputMeans(), "terminal.output.means");
       } else if (treetype == TREE_SURVIVAL) {
         auto& temp = dynamic_cast<ForestSurvival&>(*forest);
         forest_object.push_back(temp.getChf(), "chf");

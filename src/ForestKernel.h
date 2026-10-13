@@ -1,6 +1,8 @@
 #ifndef FORESTKERNEL_H_
 #define FORESTKERNEL_H_
 
+#include <limits>
+
 #include "Forest.h"
 #include "ApproxFeatures.h"
 
@@ -13,6 +15,8 @@ public:
   ForestKernel& operator=(const ForestKernel&) = delete;
   ~ForestKernel() override = default;
 
+  std::vector<std::vector<std::vector<double>>> getTerminalOutputMeans() const;
+  
 private:
   void initInternal() override;
   void growInternal() override;

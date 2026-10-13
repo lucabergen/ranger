@@ -94,6 +94,14 @@ OKranger <- function(Phi = NULL, K = NULL, x, approx.tolerance, num.trees = 500,
     if (any(!is.finite(K))) {
       stop("'K' must contain only finite values.")
     }
+
+    if (!isSymmetric(K)) {
+      stop("'K' must be symmetric.")
+    }
+    
+    if (oob.error == TRUE) {
+      stop("OOB predictions and error are currently supported only when 'Phi' is supplied; set 'oob.error = FALSE' for 'K'.")
+    }
   }
   
   if (is.null(respect.unordered.factors)) {
@@ -293,7 +301,39 @@ OKranger <- function(Phi = NULL, K = NULL, x, approx.tolerance, num.trees = 500,
   )
   
   
-  ## TODO: Add result preparation
+  if (length(result) == 0L) {
+    stop("User interrupt or internal error.")
+  }
+  
+  # Convert explicit-feature OOB predictions to an n-by-d matrix.
+  if (identical(output.representation, "FEATURES") && isTRUE(oob.error)) {
+    oob.predictions <- result$predictions
+    
+    if (is.list(oob.predictions)) {
+      oob.predictions <- do.call(rbind, oob.predictions)
+    } else if (is.null(dim(oob.predictions))) {
+      oob.predictions <- matrix(
+        oob.predictions,
+        nrow = nrow(Phi),
+        ncol = ncol(Phi),
+        byrow = TRUE
+      )
+    }
+    
+    result$predictions <- oob.predictions
+    
+    if (!is.null(rownames(x))) {
+      rownames(result$predictions) <- rownames(x)
+    }
+    
+    if (!is.null(colnames(Phi))) {
+      colnames(result$predictions) <- colnames(Phi)
+    }
+    
+  } else if (!isTRUE(oob.error)) {
+    result$predictions <- NULL
+    result$prediction.error <- NULL
+  }
   
   return(result)
 }
