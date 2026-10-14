@@ -54,7 +54,7 @@ private:
   void findBestSplitValueSorted(size_t nodeID, size_t varID,
     size_t num_samples_node, const std::vector<double>& sum_total,
     double& best_value, size_t& best_varID, double& best_score);
-    // Large-Q search using ranger's global unique-value indices.
+  // Large-Q search using ranger's global unique-value indices.
   void findBestSplitValueLargeQ(size_t nodeID, size_t varID,
     size_t num_samples_node, const std::vector<double>& sum_total,
     double& best_value, size_t& best_varID, double& best_score);

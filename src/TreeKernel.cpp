@@ -340,7 +340,7 @@ void TreeKernel::findBestSplitValueLargeQ(size_t nodeID, size_t varID, size_t nu
   std::vector<double> sum_right(rank, 0.0);
   size_t n_left = 0;
 
-  // Iteratore over unique predictor values
+  // Iterate over unique predictor values
   for (size_t i = 0; i + 1 < num_unique; ++i) {
     if (counter[i] == 0) {
       continue;
