@@ -51,9 +51,13 @@ private:
 
   // Called by splitNodeInternal(). Sets split_varIDs and split_values.
   bool findBestSplit(size_t nodeID, std::vector<size_t>& possible_split_varIDs);
-  void findBestSplitValue(size_t nodeID, size_t varID, size_t num_samples_node,
-    const std::vector<double>& sum_total, double& best_value, size_t& best_varID, double& best_score);
-
+  void findBestSplitValueSorted(size_t nodeID, size_t varID,
+    size_t num_samples_node, const std::vector<double>& sum_total,
+    double& best_value, size_t& best_varID, double& best_score);
+    // Large-Q search using ranger's global unique-value indices.
+  void findBestSplitValueLargeQ(size_t nodeID, size_t varID,
+    size_t num_samples_node, const std::vector<double>& sum_total,
+    double& best_value, size_t& best_varID, double& best_score);
   // Helper function; computes the projected-feature score of one node
   double kernelScore(const std::vector<double>& sum, size_t n) const;
   // Returns sum of projected-feature scores of left and right child nodes
@@ -79,6 +83,8 @@ private:
   // Stores only means of terminal nodes, except when saving node statistics
   std::vector<std::vector<double>> terminal_output_means;
 
+  std::vector<size_t> counter;
+  std::vector<double> sums;
 };
 
 } // namespace ranger
