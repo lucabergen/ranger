@@ -126,11 +126,12 @@ double TreeKernel::kernelScore(const std::vector<double>& sum, size_t n) const {
     return 0.0;
   }
 
-  double score = 0.0;
+  double squared_norm = 0.0;
   for (double value : sum) {
-    score += value * value / static_cast<double>(n);
+    squared_norm += value * value;
   }
-  return score;
+
+  return squared_norm / static_cast<double>(n);
 }
 
 double TreeKernel::splitScore(const std::vector<double>& sum_left, const std::vector<double>& sum_right,
