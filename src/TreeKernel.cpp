@@ -196,7 +196,7 @@ bool TreeKernel::findBestSplit(size_t nodeID, std::vector<size_t>& possible_spli
     const double q = static_cast<double>(num_samples_node) / static_cast<double>(num_unique);
 
     if (memory_saving_splitting || q < Q_THRESHOLD) {
-      findBestSplitValueSorted(nodeID, varID, num_samples_node, sum_total, best_value, best_varID, best_score);
+      findBestSplitValueSmallQ(nodeID, varID, num_samples_node, sum_total, best_value, best_varID, best_score);
     } else {
       findBestSplitValueLargeQ(nodeID, varID, num_samples_node, sum_total, best_value, best_varID, best_score);
     }
@@ -224,48 +224,96 @@ bool TreeKernel::findBestSplit(size_t nodeID, std::vector<size_t>& possible_spli
   return false;
 }
 
-void TreeKernel::findBestSplitValueSorted(size_t nodeID, size_t varID, size_t num_samples_node,
+void TreeKernel::findBestSplitValueSmallQ(size_t nodeID, size_t varID, size_t num_samples_node,
   const std::vector<double>& sum_total, double& best_value, size_t& best_varID, double& best_score) {
 
   if (!data->isOrderedVariable(varID)) {
-    throw std::runtime_error(
-        "OKranger currently supports numeric ordered predictors only.");
+    throw std::runtime_error("OKranger currently supports numeric ordered predictors only.");
   }
 
   const size_t rank = approx_features->rank;
-  std::vector<std::pair<double, size_t>> ordered_samples;
-  ordered_samples.reserve(num_samples_node);
 
+  for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
+    const size_t sample_id = sampleIDs[pos];
+    if (!std::isfinite(data->get_x(sample_id, varID))) {
+      throw std::runtime_error("OKranger currently requires finite predictors without missing values.");
+    }
+  }
+
+  std::vector<double> possible_split_values;
+  data->getAllValues(possible_split_values, sampleIDs, varID, start_pos[nodeID], end_pos[nodeID]);
+
+  if (possible_split_values.size() < 2) {
+    return;
+  }
+
+  const size_t num_splits = possible_split_values.size();
+
+  // Use local buffers in memory-saving mode; otherwise reuse the tree workspace.
+  std::vector<size_t> local_counter;
+  std::vector<double> local_sums;
+  std::vector<size_t>* counts = &counter;
+  std::vector<double>* bucket_sums = &sums;
+
+  if (memory_saving_splitting) {
+    if (rank > 0 && num_splits > std::numeric_limits<size_t>::max() / rank) {
+      throw std::length_error("Small-Q split workspace size overflow.");
+    }
+
+    local_counter.resize(num_splits);
+    local_sums.resize(num_splits * rank);
+    counts = &local_counter;
+    bucket_sums = &local_sums;
+  } else {
+    if (counter.size() < num_splits || sums.size() < num_splits * rank) {
+      throw std::logic_error("Small-Q split workspace is too small.");
+    }
+
+    std::fill_n(counter.begin(), num_splits, 0);
+    std::fill_n(sums.begin(), num_splits * rank, 0.0);
+  }
+
+  // Accumulate output-feature sums in bootstrap order within each local x bucket.
   for (size_t pos = start_pos[nodeID]; pos < end_pos[nodeID]; ++pos) {
     const size_t sample_id = sampleIDs[pos];
     const double x_value = data->get_x(sample_id, varID);
 
-    if (!std::isfinite(x_value)) {
-      throw std::runtime_error(
-          "OKranger currently requires finite predictors without missing values.");
+    const auto value_it = std::lower_bound(possible_split_values.begin(), possible_split_values.end(), x_value);
+    if (value_it == possible_split_values.end() || *value_it != x_value) {
+      throw std::logic_error("Observed predictor value is missing from the Small-Q buckets.");
     }
-    ordered_samples.emplace_back(x_value, sample_id);
-  }
 
-  std::sort(ordered_samples.begin(), ordered_samples.end());
+    const size_t index = static_cast<size_t>(value_it - possible_split_values.begin());
+    ++(*counts)[index];
+
+    const size_t offset = index * rank;
+    for (size_t feature = 0; feature < rank; ++feature) {
+      (*bucket_sums)[offset + feature] += approx_features->get(sample_id, feature);
+    }
+  }
 
   std::vector<double> sum_left(rank, 0.0);
   std::vector<double> sum_right(rank, 0.0);
+  size_t n_left = 0;
 
-  for (size_t i = 0; i + 1 < ordered_samples.size(); ++i) {
-    const size_t sample_id = ordered_samples[i].second;
-    for (size_t feature = 0; feature < rank; ++feature) {
-      sum_left[feature] += approx_features->get(sample_id, feature);
-    }
-
-    const double x_left = ordered_samples[i].first;
-    const double x_right = ordered_samples[i + 1].first;
-    if (x_left == x_right) {
+  // Iterate over predictor values observed in this node 
+  for (size_t i = 0; i + 1 < num_splits; ++i) {
+    if ((*counts)[i] == 0) {
       continue;
     }
 
-    const size_t n_left = i + 1;
+    n_left += (*counts)[i];
+    const size_t offset = i * rank;
+
+    for (size_t feature = 0; feature < rank; ++feature) {
+      sum_left[feature] += (*bucket_sums)[offset + feature];
+    }
+
     const size_t n_right = num_samples_node - n_left;
+    if (n_right == 0) {
+      break;
+    }
+
     if (n_left < (*min_bucket)[0] || n_right < (*min_bucket)[0]) {
       continue;
     }
@@ -278,17 +326,16 @@ void TreeKernel::findBestSplitValueSorted(size_t nodeID, size_t varID, size_t nu
     regularize(candidate_score, varID);
 
     if (candidate_score > best_score) {
-      best_score = candidate_score;
-      best_varID = varID;
+      const double x_left = possible_split_values[i];
+      const double x_right = possible_split_values[i + 1];
 
-      if (x_left < 0.0 && x_right > 0.0) {
-        best_value = x_left / 2.0 + x_right / 2.0;
-      } else {
-        best_value = x_left + (x_right - x_left) / 2.0;
-      }
-      if (best_value < x_left || best_value >= x_right) {
+      best_value = (x_left + x_right) / 2.0;
+      if (best_value == x_right) {
         best_value = x_left;
       }
+
+      best_varID = varID;
+      best_score = candidate_score;
     }
   }
 }

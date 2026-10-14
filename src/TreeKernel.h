@@ -51,10 +51,11 @@ private:
 
   // Called by splitNodeInternal(). Sets split_varIDs and split_values.
   bool findBestSplit(size_t nodeID, std::vector<size_t>& possible_split_varIDs);
-  void findBestSplitValueSorted(size_t nodeID, size_t varID,
+  // Small-Q search using predictor values observed in the current node
+  void findBestSplitValueSmallQ(size_t nodeID, size_t varID,
     size_t num_samples_node, const std::vector<double>& sum_total,
     double& best_value, size_t& best_varID, double& best_score);
-  // Large-Q search using ranger's global unique-value indices.
+  // Large-Q search using ranger's global unique-value indices
   void findBestSplitValueLargeQ(size_t nodeID, size_t varID,
     size_t num_samples_node, const std::vector<double>& sum_total,
     double& best_value, size_t& best_varID, double& best_score);
