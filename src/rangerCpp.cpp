@@ -266,6 +266,11 @@ Rcpp::List rangerCpp(uint treetype, Rcpp::NumericMatrix& input_x, Rcpp::NumericM
       result.push_back(forest->getInbagCounts(), "inbag.counts");
     }
 
+    if (treetype == TREE_KERNEL) {
+      const auto& kernel_forest = dynamic_cast<const ForestKernel&>(*forest);
+      result.push_back(kernel_forest.getApproximationRank(), "approximation.rank");
+    }
+
     // Save forest if needed
     if (write_forest) {
       Rcpp::List forest_object;

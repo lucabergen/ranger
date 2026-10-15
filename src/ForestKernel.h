@@ -16,6 +16,10 @@ public:
   ~ForestKernel() override = default;
 
   std::vector<std::vector<std::vector<double>>> getTerminalOutputMeans() const;
+
+  size_t getApproximationRank() const {
+    return approx_features.rank;
+  }
   
 private:
   void initInternal() override;
