@@ -106,14 +106,14 @@ predict.ranger.forest <- function(object, data, predict.all = FALSE,
   }
   
   if (identical(forest$treetype, "Output kernel regression")) {
-    if (identical(forest$output.representation, "GRAM")) {
-      stop("Prediction with 'K' output representation is not supported. Use getForestWeights() to obtain forest weights.")
-    }
-    if (!identical(forest$output.representation, "FEATURES")) {
-      stop("Invalid OKranger forest: 'Phi' output representation is missing.")
+    if (!(forest$output.representation %in% c("FEATURES", "GRAM"))) {
+      stop("Invalid OKranger forest: output representation is missing or invalid.")
     }
     if (!type %in% c("response", "terminalNodes")) {
       stop("Output kernel regression supports response and terminal-node predictions only.")
+    }
+    if (identical(forest$output.representation, "GRAM") && !identical(type, "terminalNodes")) {
+      stop("Response prediction with 'K' output representation is not supported. Use getForestWeights() to obtain forest weights.")
     }
   }
   
@@ -597,12 +597,11 @@ predict.ranger <- function(object, data = NULL, predict.all = FALSE,
                            seed = NULL, num.threads = NULL,
                            verbose = TRUE, ...) {
   if (identical(object$treetype, "Output kernel regression")) {
-    if (identical(object$output.representation, "GRAM")) {
-      stop("Prediction with 'K' output representation is not supported. Use getForestWeights() to obtain forest weights.")
-    }
-    
     if (!type %in% c("response", "terminalNodes")) {
       stop("Output kernel regression supports response and terminal-node predictions only.")
+    }
+    if (identical(object$output.representation, "GRAM") && !identical(type, "terminalNodes")) {
+      stop("Response prediction with 'K' output representation is not supported. Use getForestWeights() to obtain forest weights.")
     }
   }
   forest <- object$forest

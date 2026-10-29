@@ -28,6 +28,38 @@ test_that("Phi OOB predictions are a matrix and match the reported error", {
   expect_equal(fit$prediction.error, expected_error, tolerance = 1e-10)
 })
 
+test_that("K output rejects response prediction but allows terminal-node prediction", {
+  
+  n <- 30
+  x <- data.frame(x1 = runif(n), x2 = runif(n))
+  
+  Phi <- cbind(feature1 = x$x1^2, feature2 = x$x2^3)
+  K <- tcrossprod(Phi)
+  
+  fit_K <- expect_warning(
+    OKranger(K = K, x = x, approx.tolerance = 1e-16, 
+             num.trees = 5, seed = 123, verbose = FALSE, 
+             oob.error = TRUE, write.forest = TRUE),
+    "OOB predictions and OOB error are skipped"
+  )
+  
+  expect_null(fit_K$predictions)
+  expect_null(fit_K$prediction.error)
+  
+  expect_error(
+    predict(fit_K, data = x, type = "response"),
+    "Response prediction with 'K' output representation is not supported"
+  )
+  
+  terminal_nodes <- predict(fit_K, data = x, type = "terminalNodes")
+  
+  expect_equal(
+    dim(terminal_nodes$predictions),
+    c(nrow(x), fit_K$num.trees)
+  )
+  expect_true(all(terminal_nodes$predictions >= 0))
+})
+
 test_that("oob.error = FALSE skips OOB outputs", {
 
   n <- 30
@@ -102,7 +134,7 @@ test_that("Gram input skips OOB outputs and predict refers to getForestWeights()
   expect_error(predict(fit, x), "getForestWeights()")
 })
 
-test_that("Phi OOB predictions equal regression forest OOB predictions", {
+test_that("Phi predictions equal regression forest predictions", {
   
   n <- 100
   x <- matrix(rnorm(n*7,0,1),ncol = 7)
@@ -114,70 +146,28 @@ test_that("Phi OOB predictions equal regression forest OOB predictions", {
                   write.forest = TRUE, keep.inbag = TRUE,
                   oob.error = TRUE, seed = 123)
   
-  fit_Phi <- OKranger(Phi = Phi, x = x, 
-                      approx.tolerance = 1e-16,
+  fit_Phi <- OKranger(Phi = Phi, x = x, approx.tolerance = 1e-16,
+                      write.forest = TRUE, keep.inbag = TRUE,
                       oob.error = TRUE, seed = 123)
   
+  # OOB predictions
   expect_equal(fit_y$predictions, as.vector(fit_Phi$predictions),
                tolerance = 1e-10)
-})
-
-test_that("Phi OOB predictions equal probability forest OOB predictions", {
   
-  n <- 100
-  x <- matrix(rnorm(n * 7, 0, 1), ncol = 7)
-  eta <- 0.8 * x[, 1] - 0.5 * x[, 3] + 0.6 * x[, 5] - 0.3 * x[, 6]
-  cuts <- quantile(eta + rnorm(n), probs = c(0, 1/3, 2/3, 1), names = FALSE)
-  labels <- c("low", "middle", "high")
-  y <- cut(eta, breaks = cuts, include.lowest = TRUE, labels = labels)
-  x <- as.data.frame(x)
-  class_order <- unique(as.character(y))
-  # One-got encode y
-  Phi <- vapply(class_order, function(cl) as.numeric(y == cl), 
-                numeric(length(y)))
-  colnames(Phi) <- class_order
-  
-  fit_prob <- ranger(y = y, x = x, probability = TRUE,
-                     mtry = 7, min.node.size = 3, min.bucket = 1, 
-                     oob.error = T, seed = 123)
-  
-  fit_Phi <- OKranger(Phi = Phi, x = x, approx.tolerance = 1e-16, 
-                      mtry = 7, min.node.size = 3, min.bucket = 1, 
-                      oob.error = T, seed = 123)
-  
-  expect_equal(fit_prob$predictions[, labels, drop = FALSE],
-               fit_Phi$predictions[, labels, drop = FALSE],
-               tolerance = 1e-10)
-})
-
-test_that("Phi predictions equal regression forest predictions", {
-  
-  n <- 100
-  x <- matrix(rnorm(n*7,0,1),ncol = 7)
-  y <- 0.6*x[,1] - 0.2*x[,2] + 0.3*x[,4] + 0.9*x[,5] - 0.5*x[,6] + rnorm(n)
-  x <- as.data.frame(x)
-  Phi <- matrix(y, ncol = 1)
-  
-  fit_y <- ranger(y = y, x = x, 
-                  write.forest = TRUE, keep.inbag = TRUE,
-                  seed = 123)
-  
-  fit_Phi <- OKranger(Phi = Phi, x = x, 
-                      approx.tolerance = 1e-16,
-                      seed = 123)
-  
+  # predictions on training data
   pred_y <- predict(fit_y, x)
   pred_Phi <- predict(fit_Phi, x)
   
+  expect_equal(pred_y$predictions, as.vector(pred_Phi$predictions),
+               tolerance = 1e-10)
+  
+  # predictions on new data
   n_new <- 350
   x_new <- matrix(rnorm(n_new*7,0,1),ncol = 7)
   x_new <- as.data.frame(x_new)
   
   pred_y_new <- predict(fit_y, x_new)
   pred_Phi_new <- predict(fit_Phi, x_new)
-  
-  expect_equal(pred_y$predictions, as.vector(pred_Phi$predictions),
-               tolerance = 1e-10)
   
   expect_equal(pred_y_new$predictions, as.vector(pred_Phi_new$predictions),
                tolerance = 1e-10)
@@ -199,26 +189,35 @@ test_that("Phi predictions equal probability forest predictions", {
   colnames(Phi) <- class_order
   
   fit_prob <- ranger(y = y, x = x, probability = TRUE,
-                     mtry = 7, min.node.size = 3, min.bucket = 1, 
-                     seed = 123)  
+                     write.forest = TRUE, keep.inbag = TRUE,
+                     oob.error = TRUE, seed = 123,
+                     mtry = 7, min.node.size = 3, min.bucket = 1)  
 
   fit_Phi <- OKranger(Phi = Phi, x = x, approx.tolerance = 1e-16, 
-                      mtry = 7, min.node.size = 3, min.bucket = 1, 
-                      seed = 123)
+                      write.forest = TRUE, keep.inbag = TRUE,
+                      oob.error = TRUE, seed = 123, 
+                      mtry = 7, min.node.size = 3, min.bucket = 1)
   
+  # OOB predictions
+  expect_equal(fit_prob$predictions[, labels, drop = FALSE],
+               fit_Phi$predictions[, labels, drop = FALSE],
+               tolerance = 1e-10)
+  
+  # predictions on training data
   pred_prob <- predict(fit_prob, x)
   pred_Phi <- predict(fit_Phi, x)
   
-  n_new <- 350
+  expect_equal(pred_prob$predictions[, labels, drop = FALSE], 
+               pred_Phi$predictions[, labels, drop = FALSE],
+               tolerance = 1e-10)
+  
+  # predictions on new data
+  n_new <- 150
   x_new <- matrix(rnorm(n_new*7,0,1),ncol = 7)
   x_new <- as.data.frame(x_new)
   
   pred_prob_new <- predict(fit_prob, x_new)
   pred_Phi_new <- predict(fit_Phi, x_new)
-  
-  expect_equal(pred_prob$predictions[, labels, drop = FALSE], 
-               pred_Phi$predictions[, labels, drop = FALSE],
-               tolerance = 1e-10)
   
   expect_equal(pred_prob_new$predictions[, labels, drop = FALSE], 
                pred_Phi_new$predictions[, labels, drop = FALSE],
@@ -226,39 +225,53 @@ test_that("Phi predictions equal probability forest predictions", {
   
 })
 
-test_that("Phi terminal nodes equal regression forest terminal nodes", {
+test_that("OKranger terminal nodes equal regression forest terminal nodes", {
   
   n <- 100
   x <- matrix(rnorm(n*7,0,1),ncol = 7)
   y <- 0.6*x[,1] - 0.2*x[,2] + 0.3*x[,4] + 0.9*x[,5] - 0.5*x[,6] + rnorm(n)
   x <- as.data.frame(x)
   Phi <- matrix(y, ncol = 1)
+  K <- tcrossprod(Phi)
   
   fit_y <- ranger(y = y, x = x, 
                   write.forest = TRUE, keep.inbag = TRUE,
                   seed = 123)
   
   fit_Phi <- OKranger(Phi = Phi, x = x, 
-                      approx.tolerance = 1e-16,
+                      approx.tolerance = 1e-10,
                       seed = 123)
   
+  fit_K <- OKranger(K = K, x = x, 
+                    approx.tolerance = 1e-10,
+                    seed = 123)
+  
+  # Prediction on training data
   pred_y <- predict(fit_y, x, type = "terminalNodes")
   pred_Phi <- predict(fit_Phi, x, type = "terminalNodes")
+  pred_K <- predict(fit_K, x, type = "terminalNodes")
   
-  n_new <- 350
+  expect_equal(pred_y$predictions, pred_Phi$predictions,
+               tolerance = 1e-10)
+  expect_equal(pred_y$predictions, pred_K$predictions,
+               tolerance = 1e-10)
+  
+  # Prediction on new data
+  n_new <- 150
   x_new <- matrix(rnorm(n_new*7,0,1),ncol = 7)
   x_new <- as.data.frame(x_new)
   
   pred_y_new <- predict(fit_y, x_new, type = "terminalNodes")
   pred_Phi_new <- predict(fit_Phi, x_new, type = "terminalNodes")
+  pred_K_new <- predict(fit_K, x_new, type = "terminalNodes")
   
-  expect_equal(pred_y$predictions, pred_Phi$predictions,
-               tolerance = 1e-10)
   expect_equal(pred_y_new$predictions, pred_Phi_new$predictions,
+               tolerance = 1e-10)
+  expect_equal(pred_y_new$predictions, pred_K_new$predictions,
                tolerance = 1e-10)
 })
 
-test_that("Phi terminal nodes equal probability forest terminal nodes", {
+test_that("OKranger terminal nodes equal probability forest terminal nodes", {
   
   n <- 100
   x <- matrix(rnorm(n * 7, 0, 1), ncol = 7)

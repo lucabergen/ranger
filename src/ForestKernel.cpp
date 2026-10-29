@@ -16,11 +16,14 @@ void ForestKernel::initInternal() {
   }
 
   if (prediction_mode) {
-    if (output_representation != OUTPUT_REPRESENTATION_FEATURES) {
-      throw std::runtime_error(
-        "Prediction for K inputs is not supported by predict(). "
-        "Use getForestWeights() to obtain forest weights.");
-    }
+    const bool terminal_node_prediction = prediction_type == TERMINALNODES;
+     if (output_representation != OUTPUT_REPRESENTATION_FEATURES && 
+      !(output_representation == OUTPUT_REPRESENTATION_GRAM && terminal_node_prediction)) {
+        throw std::runtime_error(
+          "Response prediction with 'K' output representation is not supported. "
+          "Use getForestWeights() to obtain forest weights."
+        );
+      }
     return;
   }
 
@@ -74,8 +77,14 @@ void ForestKernel::growInternal() {
 void ForestKernel::loadForest(size_t num_trees, std::vector<std::vector<std::vector<size_t>>>& forest_child_nodeIDs,
   std::vector<std::vector<size_t>>& forest_split_varIDs, std::vector<std::vector<double>>& forest_split_values,
   std::vector<std::vector<std::vector<double>>>& forest_terminal_output_means, std::vector<bool>& is_ordered_variable) {
-    if (output_representation != OUTPUT_REPRESENTATION_FEATURES) {
-      throw std::runtime_error("Prediction for K inputs requires a W matrix.");
+    const bool terminal_node_prediction = prediction_type == TERMINALNODES;
+    
+    if (output_representation != OUTPUT_REPRESENTATION_FEATURES &&
+      !(output_representation == OUTPUT_REPRESENTATION_GRAM && terminal_node_prediction)) {
+        throw std::runtime_error(
+          "Response prediction with 'K' output representation is not supported. "
+          "Use getForestWeights() to obtain forest weights."
+        );
     }
 
     if (forest_child_nodeIDs.size() < num_trees || forest_split_varIDs.size() < num_trees ||
@@ -98,8 +107,9 @@ void ForestKernel::loadForest(size_t num_trees, std::vector<std::vector<std::vec
       }
     }
   }
-  if (num_output_features == 0) {
-    throw std::runtime_error("Loaded OKranger forest has no terminal Phi means.");
+  if (num_output_features == 0 &&
+    !(output_representation == OUTPUT_REPRESENTATION_GRAM && terminal_node_prediction)) {
+      throw std::runtime_error("Loaded OKranger forest has no terminal Phi means.");
   }
 
   trees.reserve(num_trees);

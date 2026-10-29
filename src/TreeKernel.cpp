@@ -17,7 +17,7 @@ TreeKernel::TreeKernel(OutputRepresentation output_representation) :
   if (output_representation != OUTPUT_REPRESENTATION_FEATURES &&
       output_representation != OUTPUT_REPRESENTATION_GRAM) {
     throw std::invalid_argument(
-        "TreeKernel requires Phi or K output data.");
+        "TreeKernel requires Phi or K output representation.");
   }
 }
 
