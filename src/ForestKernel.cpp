@@ -6,17 +6,25 @@
 #include "ForestKernel.h"
 #include "TreeKernel.h"
 #include "Data.h"
+#include "utility.h"
 
 namespace ranger {
 
 void ForestKernel::initInternal() {
-  if (prediction_mode) {
-    throw std::runtime_error("Prediction mode for OKranger is not implemented yet.");
-  }
-
   if (output_representation != OUTPUT_REPRESENTATION_FEATURES && output_representation != OUTPUT_REPRESENTATION_GRAM) {
     throw std::runtime_error("ForestKernel requires Phi or K output data.");
   }
+
+  if (prediction_mode) {
+    if (output_representation != OUTPUT_REPRESENTATION_FEATURES) {
+      throw std::runtime_error(
+        "Prediction for K inputs is not supported by predict(). "
+        "Use getForestWeights() to obtain forest weights.");
+    }
+    return;
+  }
+
+  num_output_features = data->getNumColsY();
 
   // Use the regression forest defaults for tree-growth parameters
   if (mtry == 0) {
@@ -63,23 +71,107 @@ void ForestKernel::growInternal() {
   }
 }
 
+void ForestKernel::loadForest(size_t num_trees, std::vector<std::vector<std::vector<size_t>>>& forest_child_nodeIDs,
+  std::vector<std::vector<size_t>>& forest_split_varIDs, std::vector<std::vector<double>>& forest_split_values,
+  std::vector<std::vector<std::vector<double>>>& forest_terminal_output_means, std::vector<bool>& is_ordered_variable) {
+    if (output_representation != OUTPUT_REPRESENTATION_FEATURES) {
+      throw std::runtime_error("Prediction for K inputs requires a W matrix.");
+    }
+
+    if (forest_child_nodeIDs.size() < num_trees || forest_split_varIDs.size() < num_trees ||
+        forest_split_values.size() < num_trees || forest_terminal_output_means.size() < num_trees) {
+      throw std::runtime_error("Loaded OKranger forest has inconsistent tree counts.");
+    }
+
+  this->num_trees = num_trees;
+  data->setIsOrderedVariable(is_ordered_variable);
+  num_output_features = 0;
+
+  for (const auto& tree_means : forest_terminal_output_means) {
+    for (const auto& node_mean : tree_means) {
+      if (!node_mean.empty()) {
+        if (num_output_features == 0) {
+          num_output_features = node_mean.size();
+        } else if (node_mean.size() != num_output_features) {
+          throw std::runtime_error("Loaded OKranger forest has inconsistent output dimensions.");
+        }
+      }
+    }
+  }
+  if (num_output_features == 0) {
+    throw std::runtime_error("Loaded OKranger forest has no terminal Phi means.");
+  }
+
+  trees.reserve(num_trees);
+  for (size_t i = 0; i < num_trees; ++i) {
+    trees.push_back(std::make_unique<TreeKernel>(output_representation, forest_child_nodeIDs[i],
+      forest_split_varIDs[i], forest_split_values[i], forest_terminal_output_means[i]));
+  }
+  equalSplit(thread_ranges, 0, num_trees - 1, num_threads);
+}
+
 void ForestKernel::allocatePredictMemory() {
-  throw std::logic_error("ForestKernel prediction is not implemented yet.");
+  const size_t num_prediction_samples = data->getNumRows();
+  if (prediction_type == TERMINALNODES) {
+    predictions = std::vector<std::vector<std::vector<double>>>(
+        1, std::vector<std::vector<double>>(num_prediction_samples, std::vector<double>(num_trees))
+    );
+    return;
+  }
+  if (output_representation != OUTPUT_REPRESENTATION_FEATURES || num_output_features == 0) {
+    throw std::logic_error("Kernel prediction requires loaded Phi terminal means.");
+  }
+   if (predict_all) {
+    predictions = std::vector<std::vector<std::vector<double>>>(
+      1, std::vector<std::vector<double>>(num_prediction_samples, std::vector<double>(num_trees * num_output_features))
+    );
+  } else {
+    predictions = std::vector<std::vector<std::vector<double>>>(
+      1, std::vector<std::vector<double>>(num_output_features, std::vector<double>(num_prediction_samples))
+    );
+  }
 }
 
 void ForestKernel::predictInternal(size_t sample_idx) {
-  (void) sample_idx;
-  throw std::logic_error("ForestKernel prediction is not implemented yet.");
+  if (prediction_type == TERMINALNODES) {
+    for (size_t tree_idx = 0; tree_idx < num_trees; ++tree_idx) {
+      predictions[0][sample_idx][tree_idx] = getTreePredictionTerminalNodeID(tree_idx, sample_idx);
+    }
+    return;
+  }
+
+  if (prediction_type != RESPONSE) {
+    throw std::runtime_error("Output kernel regression supports response and terminal-node predictions only.");
+  }
+
+  if (predict_all) {
+    for (size_t tree_idx = 0; tree_idx < num_trees; ++tree_idx) {
+      const std::vector<double>& tree_prediction = getTreePrediction(tree_idx, sample_idx);
+      for (size_t feature = 0; feature < num_output_features; ++feature) {
+        predictions[0][sample_idx][tree_idx * num_output_features + feature] = tree_prediction[feature];
+      }
+    }
+  } else {
+    for (size_t feature = 0; feature < num_output_features; ++feature) {
+      double prediction_sum = 0.0;
+      for (size_t tree_idx = 0; tree_idx < num_trees; ++tree_idx) {
+        prediction_sum += getTreePrediction(tree_idx, sample_idx)[feature];
+      }
+      predictions[0][feature][sample_idx] = prediction_sum / static_cast<double>(num_trees);
+    }
+  }
 }
 
 void ForestKernel::computePredictionErrorInternal() {
   if (output_representation != OUTPUT_REPRESENTATION_FEATURES) {
-    throw std::runtime_error("OOB predictions are currently available only when Phi is supplied; use oob.error = FALSE for K.");
+    throw std::runtime_error("OOB predictions and OOB error are not computed for K inputs");
   }
 
   const size_t num_features = data->getNumColsY();
   std::vector<size_t> samples_oob_count(num_samples, 0);
-  predictions = std::vector<std::vector<std::vector<double>>>(1, std::vector<std::vector<double>>(num_samples, std::vector<double>(num_features, 0.0)));
+  predictions = std::vector<std::vector<std::vector<double>>>(
+    1, std::vector<std::vector<double>>(num_samples, std::vector<double>(num_features, 0.0))
+  );
 
   // Sum each trees Phi leaf mean only for samples that were OOB in that tree
   for (size_t tree_idx = 0; tree_idx < num_trees; ++tree_idx) {
@@ -106,7 +198,9 @@ void ForestKernel::computePredictionErrorInternal() {
 
   for (size_t sample_id = 0; sample_id < num_samples; ++sample_id) {
     if (samples_oob_count[sample_id] == 0) {
-      std::fill(predictions[0][sample_id].begin(), predictions[0][sample_id].end(), std::numeric_limits<double>::quiet_NaN());
+      std::fill(
+        predictions[0][sample_id].begin(), predictions[0][sample_id].end(), std::numeric_limits<double>::quiet_NaN()
+      );
       continue;
     }
 
@@ -132,6 +226,16 @@ void ForestKernel::computePredictionErrorInternal() {
   }
 }
 
+const std::vector<double>& ForestKernel::getTreePrediction(size_t tree_idx, size_t sample_idx) const {
+  const auto& tree = dynamic_cast<const TreeKernel&>(*trees[tree_idx]);
+  return tree.getPrediction(sample_idx);
+}
+
+size_t ForestKernel::getTreePredictionTerminalNodeID(size_t tree_idx, size_t sample_idx) const {
+  const auto& tree = dynamic_cast<const TreeKernel&>(*trees[tree_idx]);
+  return tree.getPredictionTerminalNodeID(sample_idx);
+}
+
 std::vector<std::vector<std::vector<double>>>
 ForestKernel::getTerminalOutputMeans() const {
   std::vector<std::vector<std::vector<double>>> result;
@@ -147,7 +251,7 @@ ForestKernel::getTerminalOutputMeans() const {
 
 void ForestKernel::writeOutputInternal() {
   if (verbose_out) {
-    *verbose_out << "Tree type:                         Kernel regression" << std::endl;
+    *verbose_out << "Tree type:                         Output kernel regression" << std::endl;
   }
 }
 

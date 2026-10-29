@@ -98,10 +98,6 @@ OKranger <- function(Phi = NULL, K = NULL, x, approx.tolerance, num.trees = 500,
     if (!isSymmetric(K)) {
       stop("'K' must be symmetric.")
     }
-    
-    if (oob.error == TRUE) {
-      stop("OOB predictions and error are currently supported only when 'Phi' is supplied; set 'oob.error = FALSE' for 'K'.")
-    }
   }
   
   if (is.null(respect.unordered.factors)) {
@@ -170,6 +166,16 @@ OKranger <- function(Phi = NULL, K = NULL, x, approx.tolerance, num.trees = 500,
     y.mat <- as.matrix(K)
     output.representation <- "GRAM"
   }
+  
+  if (identical(output.representation, "GRAM") && isTRUE(oob.error)) {
+    warning(paste0(
+      "OOB predictions and OOB error are skipped when 'K' is supplied. ",
+      "Use getForestWeights() to obtain OOB forest weights."
+    ))
+  }
+  
+  compute.oob.error <- isTRUE(oob.error) && 
+    identical(output.representation, "FEATURES")
   
   # OKranger supports data.frame predictors only, so use the dense matrix
   sparse.x <- Matrix::Matrix(matrix(c(0, 0)))
@@ -285,7 +291,7 @@ OKranger <- function(Phi = NULL, K = NULL, x, approx.tolerance, num.trees = 500,
     sparse_x = sparse.x,
     use_sparse_data = use.sparse.data,
     order_snps = FALSE,
-    oob_error = oob.error,
+    oob_error = compute.oob.error,
     max_depth = max.depth,
     inbag = list(c(0, 0)),
     use_inbag = FALSE,
@@ -306,7 +312,7 @@ OKranger <- function(Phi = NULL, K = NULL, x, approx.tolerance, num.trees = 500,
   }
   
   # Convert explicit-feature OOB predictions to an n-by-d matrix.
-  if (identical(output.representation, "FEATURES") && isTRUE(oob.error)) {
+  if (compute.oob.error) {
     oob.predictions <- result$predictions
     
     if (is.list(oob.predictions)) {
@@ -330,11 +336,31 @@ OKranger <- function(Phi = NULL, K = NULL, x, approx.tolerance, num.trees = 500,
       colnames(result$predictions) <- colnames(Phi)
     }
     
-  } else if (!isTRUE(oob.error)) {
+  } else {
+    # K inputs do not have OOB predictions or an OOB error.
     result$predictions <- NULL
     result$prediction.error <- NULL
   }
   
+  result$treetype <- "Output kernel regression"
+  result$output.representation <- output.representation
+  result$num.samples <- nrow(x)
+  
+  if (isTRUE(write.forest)) {
+    result$forest$independent.variable.names <- independent.variable.names
+    result$forest$treetype <- result$treetype
+    result$forest$output.representation <- output.representation
+    result$forest$output.feature.names <-
+      if (identical(output.representation, "FEATURES")) colnames(Phi) else NULL
+    result$forest$num.output.features <-
+      if (identical(output.representation, "FEATURES")) ncol(Phi) else 0L
+    result$forest$covariate.levels <- covariate.levels
+    class(result$forest) <- "ranger.forest"
+  }
+  
+  result$call <- match.call()
+  result$importance.mode <- "none"
+  class(result) <- "ranger"
   return(result)
 }
 

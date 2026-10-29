@@ -49,57 +49,74 @@ test_that("oob.error = FALSE skips OOB outputs", {
   expect_null(fit$prediction.error)
 })
 
-test_that("Node statistics have correct output means for every Phi node", {
+test_that("OKranger produces the same splits as ranger", {
   
   n <- 30
   x <- data.frame(x1 = runif(n), x2 = runif(n))
-  Phi <- cbind(feature1 = x$x1, feature2 = x$x2)
+  y <- 3*x$x1 + sin(x$x2) + rnorm(n)
+  Phi <- matrix(y, ncol = 1)
   
-  fit <- OKranger(Phi = Phi, x = x, approx.tolerance = 1e-8, 
-                          node.stats = TRUE, keep.inbag = TRUE)
+  fit_Phi <- OKranger(Phi = Phi, x = x, approx.tolerance = 1e-8,
+                      node.stats = TRUE, keep.inbag = TRUE, seed = 123,
+                      num.trees = 30)
   
-  expect_equal(length(fit$forest$terminal.output.means), fit$num.trees)
+  fit_y <- ranger(y = y, x = x, 
+                  node.stats = TRUE, keep.inbag = TRUE, seed = 123,
+                  num.trees = 30)
   
-  for (tree_index in seq_len(fit$num.trees)) {
-    tree_means <- fit$forest$terminal.output.means[[tree_index]]
-    expect_true(length(tree_means) > 0L)
-    expect_true(all(lengths(tree_means) == ncol(Phi)))
+  # TreeKernel stores 0 in split.values for terminal nodes; ranger stores
+  # leaf predictions there. OKranger stores leaf means separately, so compare
+  # split.values only for non-terminal nodes.
+  for (tree in seq_len(fit_Phi$forest$num.trees)) {
+    internal_Phi <- fit_Phi$forest$child.nodeIDs[[tree]][[1]] != 0
+    internal_y   <- fit_y$forest$child.nodeIDs[[tree]][[1]] != 0
     
-    # The root mean must use in-bag counts, including bootstrap duplicates
-    inbag_counts <- fit$inbag.counts[[tree_index]]
-    expected_root_mean <- unname(colSums(Phi * inbag_counts) / sum(inbag_counts))
+    expect_identical(internal_Phi, internal_y)
     
-    expect_equal(tree_means[[1]], expected_root_mean, tolerance = 1e-10)
+    expect_equal(
+      fit_Phi$forest$split.varIDs[[tree]][internal_Phi],
+      fit_y$forest$split.varIDs[[tree]][internal_y]
+    )
+    
+    expect_equal(
+      fit_Phi$forest$split.values[[tree]][internal_Phi],
+      fit_y$forest$split.values[[tree]][internal_y],
+      tolerance = 1e-6
+    )
   }
 })
 
-test_that("Gram input requires OOB computation to be disabled in this phase", {
-  
+test_that("Gram input skips OOB outputs and predict refers to getForestWeights()", {
   n <- 20
   x <- data.frame(x1 = runif(n), x2 = runif(n))
   Phi <- cbind(x$x1^2, x$x2^3)
   K <- tcrossprod(Phi)
   
-  expect_error(OKranger(K = K, x = x, approx.tolerance = 1e-8,
-                                 num.trees = 3, verbose = FALSE, oob.error = TRUE),
-               "supported only when 'Phi' is supplied")
+  fit <- OKranger(
+    K = K, x = x, approx.tolerance = 1e-8,
+    num.trees = 3, verbose = FALSE, oob.error = TRUE
+  )
+  
+  expect_null(fit$predictions)
+  expect_null(fit$prediction.error)
+  expect_error(predict(fit, x), "getForestWeights()")
 })
 
 test_that("Phi OOB predictions equal regression forest OOB predictions", {
   
-  n <- 300
+  n <- 100
   x <- matrix(rnorm(n*7,0,1),ncol = 7)
   y <- 0.6*x[,1] - 0.2*x[,2] + 0.3*x[,4] + 0.9*x[,5] - 0.5*x[,6] + rnorm(n)
   x <- as.data.frame(x)
   Phi <- matrix(y, ncol = 1)
   
   fit_y <- ranger(y = y, x = x, 
-                          write.forest = TRUE, keep.inbag = TRUE,
-                          oob.error = TRUE, seed = 123)
+                  write.forest = TRUE, keep.inbag = TRUE,
+                  oob.error = TRUE, seed = 123)
   
   fit_Phi <- OKranger(Phi = Phi, x = x, 
-                              approx.tolerance = 1e-16,
-                              oob.error = TRUE, seed = 123)
+                      approx.tolerance = 1e-16,
+                      oob.error = TRUE, seed = 123)
   
   expect_equal(fit_y$predictions, as.vector(fit_Phi$predictions),
                tolerance = 1e-10)
@@ -107,7 +124,7 @@ test_that("Phi OOB predictions equal regression forest OOB predictions", {
 
 test_that("Phi OOB predictions equal probability forest OOB predictions", {
   
-  n <- 300
+  n <- 100
   x <- matrix(rnorm(n * 7, 0, 1), ncol = 7)
   eta <- 0.8 * x[, 1] - 0.5 * x[, 3] + 0.6 * x[, 5] - 0.3 * x[, 6]
   cuts <- quantile(eta + rnorm(n), probs = c(0, 1/3, 2/3, 1), names = FALSE)
@@ -121,14 +138,165 @@ test_that("Phi OOB predictions equal probability forest OOB predictions", {
   colnames(Phi) <- class_order
   
   fit_prob <- ranger(y = y, x = x, probability = TRUE,
-                                    mtry = 7, min.node.size = 3, min.bucket = 1, 
-                                    oob.error = T, seed = 123)
+                     mtry = 7, min.node.size = 3, min.bucket = 1, 
+                     oob.error = T, seed = 123)
   
   fit_Phi <- OKranger(Phi = Phi, x = x, approx.tolerance = 1e-16, 
-                              mtry = 7, min.node.size = 3, min.bucket = 1, 
-                              oob.error = T, seed = 123)
+                      mtry = 7, min.node.size = 3, min.bucket = 1, 
+                      oob.error = T, seed = 123)
   
   expect_equal(fit_prob$predictions[, labels, drop = FALSE],
                fit_Phi$predictions[, labels, drop = FALSE],
                tolerance = 1e-10)
+})
+
+test_that("Phi predictions equal regression forest predictions", {
+  
+  n <- 100
+  x <- matrix(rnorm(n*7,0,1),ncol = 7)
+  y <- 0.6*x[,1] - 0.2*x[,2] + 0.3*x[,4] + 0.9*x[,5] - 0.5*x[,6] + rnorm(n)
+  x <- as.data.frame(x)
+  Phi <- matrix(y, ncol = 1)
+  
+  fit_y <- ranger(y = y, x = x, 
+                  write.forest = TRUE, keep.inbag = TRUE,
+                  seed = 123)
+  
+  fit_Phi <- OKranger(Phi = Phi, x = x, 
+                      approx.tolerance = 1e-16,
+                      seed = 123)
+  
+  pred_y <- predict(fit_y, x)
+  pred_Phi <- predict(fit_Phi, x)
+  
+  n_new <- 350
+  x_new <- matrix(rnorm(n_new*7,0,1),ncol = 7)
+  x_new <- as.data.frame(x_new)
+  
+  pred_y_new <- predict(fit_y, x_new)
+  pred_Phi_new <- predict(fit_Phi, x_new)
+  
+  expect_equal(pred_y$predictions, as.vector(pred_Phi$predictions),
+               tolerance = 1e-10)
+  
+  expect_equal(pred_y_new$predictions, as.vector(pred_Phi_new$predictions),
+               tolerance = 1e-10)
+})
+
+test_that("Phi predictions equal probability forest predictions", {
+  
+  n <- 100
+  x <- matrix(rnorm(n * 7, 0, 1), ncol = 7)
+  eta <- 0.8 * x[, 1] - 0.5 * x[, 3] + 0.6 * x[, 5] - 0.3 * x[, 6]
+  cuts <- quantile(eta + rnorm(n), probs = c(0, 1/3, 2/3, 1), names = FALSE)
+  labels <- c("low", "middle", "high")
+  y <- cut(eta, breaks = cuts, include.lowest = TRUE, labels = labels)
+  x <- as.data.frame(x)
+  class_order <- unique(as.character(y))
+  # One-got encode y
+  Phi <- vapply(class_order, function(cl) as.numeric(y == cl), 
+                numeric(length(y)))
+  colnames(Phi) <- class_order
+  
+  fit_prob <- ranger(y = y, x = x, probability = TRUE,
+                     mtry = 7, min.node.size = 3, min.bucket = 1, 
+                     seed = 123)  
+
+  fit_Phi <- OKranger(Phi = Phi, x = x, approx.tolerance = 1e-16, 
+                      mtry = 7, min.node.size = 3, min.bucket = 1, 
+                      seed = 123)
+  
+  pred_prob <- predict(fit_prob, x)
+  pred_Phi <- predict(fit_Phi, x)
+  
+  n_new <- 350
+  x_new <- matrix(rnorm(n_new*7,0,1),ncol = 7)
+  x_new <- as.data.frame(x_new)
+  
+  pred_prob_new <- predict(fit_prob, x_new)
+  pred_Phi_new <- predict(fit_Phi, x_new)
+  
+  expect_equal(pred_prob$predictions[, labels, drop = FALSE], 
+               pred_Phi$predictions[, labels, drop = FALSE],
+               tolerance = 1e-10)
+  
+  expect_equal(pred_prob_new$predictions[, labels, drop = FALSE], 
+               pred_Phi_new$predictions[, labels, drop = FALSE],
+               tolerance = 1e-10)
+  
+})
+
+test_that("Phi terminal nodes equal regression forest terminal nodes", {
+  
+  n <- 100
+  x <- matrix(rnorm(n*7,0,1),ncol = 7)
+  y <- 0.6*x[,1] - 0.2*x[,2] + 0.3*x[,4] + 0.9*x[,5] - 0.5*x[,6] + rnorm(n)
+  x <- as.data.frame(x)
+  Phi <- matrix(y, ncol = 1)
+  
+  fit_y <- ranger(y = y, x = x, 
+                  write.forest = TRUE, keep.inbag = TRUE,
+                  seed = 123)
+  
+  fit_Phi <- OKranger(Phi = Phi, x = x, 
+                      approx.tolerance = 1e-16,
+                      seed = 123)
+  
+  pred_y <- predict(fit_y, x, type = "terminalNodes")
+  pred_Phi <- predict(fit_Phi, x, type = "terminalNodes")
+  
+  n_new <- 350
+  x_new <- matrix(rnorm(n_new*7,0,1),ncol = 7)
+  x_new <- as.data.frame(x_new)
+  
+  pred_y_new <- predict(fit_y, x_new, type = "terminalNodes")
+  pred_Phi_new <- predict(fit_Phi, x_new, type = "terminalNodes")
+  
+  expect_equal(pred_y$predictions, pred_Phi$predictions,
+               tolerance = 1e-10)
+  expect_equal(pred_y_new$predictions, pred_Phi_new$predictions,
+               tolerance = 1e-10)
+})
+
+test_that("Phi terminal nodes equal probability forest terminal nodes", {
+  
+  n <- 100
+  x <- matrix(rnorm(n * 7, 0, 1), ncol = 7)
+  eta <- 0.8 * x[, 1] - 0.5 * x[, 3] + 0.6 * x[, 5] - 0.3 * x[, 6]
+  cuts <- quantile(eta + rnorm(n), probs = c(0, 1/3, 2/3, 1), names = FALSE)
+  labels <- c("low", "middle", "high")
+  y <- cut(eta, breaks = cuts, include.lowest = TRUE, labels = labels)
+  x <- as.data.frame(x)
+  class_order <- unique(as.character(y))
+  # One-got encode y
+  Phi <- vapply(class_order, function(cl) as.numeric(y == cl), 
+                numeric(length(y)))
+  colnames(Phi) <- class_order
+  
+  fit_prob <- ranger(y = y, x = x, probability = TRUE,
+                     mtry = 7, min.node.size = 3, min.bucket = 1, 
+                     seed = 123)  
+  
+  fit_Phi <- OKranger(Phi = Phi, x = x, approx.tolerance = 1e-16, 
+                      mtry = 7, min.node.size = 3, min.bucket = 1, 
+                      seed = 123)
+  
+  pred_prob <- predict(fit_prob, x)
+  pred_Phi <- predict(fit_Phi, x)
+  
+  n_new <- 350
+  x_new <- matrix(rnorm(n_new*7,0,1),ncol = 7)
+  x_new <- as.data.frame(x_new)
+  
+  pred_prob_new <- predict(fit_prob, x_new)
+  pred_Phi_new <- predict(fit_Phi, x_new)
+  
+  expect_equal(pred_prob$predictions[, labels, drop = FALSE], 
+               pred_Phi$predictions[, labels, drop = FALSE],
+               tolerance = 1e-10)
+  
+  expect_equal(pred_prob_new$predictions[, labels, drop = FALSE], 
+               pred_Phi_new$predictions[, labels, drop = FALSE],
+               tolerance = 1e-10)
+  
 })

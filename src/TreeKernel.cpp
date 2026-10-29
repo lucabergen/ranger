@@ -21,6 +21,13 @@ TreeKernel::TreeKernel(OutputRepresentation output_representation) :
   }
 }
 
+TreeKernel::TreeKernel(OutputRepresentation output_representation, std::vector<std::vector<size_t>>& child_nodeIDs,
+    std::vector<size_t>& split_varIDs, std::vector<double>& split_values, 
+    std::vector<std::vector<double>>& terminal_output_means) :
+    Tree(child_nodeIDs, split_varIDs, split_values), output_representation(output_representation), 
+    terminal_output_means(terminal_output_means) {
+}
+
 void TreeKernel::allocateMemory() {
   if (!memory_saving_splitting) {
     const size_t max_num_splits = data->getMaxNumUniqueValues();

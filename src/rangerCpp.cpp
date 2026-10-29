@@ -190,6 +190,11 @@ Rcpp::List rangerCpp(uint treetype, Rcpp::NumericMatrix& input_x, Rcpp::NumericM
       } else if (treetype == TREE_REGRESSION) {
         auto& temp = dynamic_cast<ForestRegression&>(*forest);
         temp.loadForest(num_trees, child_nodeIDs, split_varIDs, split_values, is_ordered);
+      } else if (treetype == TREE_KERNEL) {
+        std::vector<std::vector<std::vector<double>>> terminal_output_means = loaded_forest["terminal.output.means"];
+        auto& temp = dynamic_cast<ForestKernel&>(*forest);
+        temp.loadForest(num_trees, child_nodeIDs, split_varIDs, split_values, 
+          terminal_output_means, is_ordered);
       } else if (treetype == TREE_SURVIVAL) {
         std::vector<std::vector<std::vector<double>> > chf = loaded_forest["chf"];
         std::vector<double> unique_timepoints = loaded_forest["unique.death.times"];

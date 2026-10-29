@@ -13,6 +13,10 @@ class TreeKernel: public Tree {
 public:
   explicit TreeKernel(OutputRepresentation output_representation);
 
+  // Create from loaded forest
+  TreeKernel(OutputRepresentation output_representation, std::vector<std::vector<size_t>>& child_nodeIDs, 
+    std::vector<size_t>& split_varIDs, std::vector<double>& split_values, std::vector<std::vector<double>>& terminal_output_means);
+
   TreeKernel(const TreeKernel&) = delete;
   TreeKernel& operator=(const TreeKernel&) = delete;
 
